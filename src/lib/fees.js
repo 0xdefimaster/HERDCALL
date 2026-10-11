@@ -22,6 +22,21 @@ export function formatPct(value) {
   return `${value.toFixed(2)}%`;
 }
 
+// Where a set of tokens' trading fees went, in USD (volume × fee % per token).
+export function feeBreakdown(tokens, volumeKey = 'vol24hUsd') {
+  const totals = { total: 0, creator: 0, interface: 0, rektBack: 0, protocol: 0 };
+  for (const t of tokens) {
+    const split = t.bonded ? FEE_SPLIT.bonded : FEE_SPLIT.unbonded;
+    for (const [key, pct] of Object.entries(split)) {
+      const usd = (t[volumeKey] * pct) / 100;
+      totals[key] += usd;
+      totals.total += usd;
+    }
+  }
+  const protocolParts = PROTOCOL_SPLIT.map((p) => ({ ...p, usd: (totals.protocol * p.pct) / 100 }));
+  return { ...totals, protocolParts };
+}
+
 export function creatorPayout(bonded) {
   const fee = bonded ? FEE_SPLIT.bonded.creator : FEE_SPLIT.unbonded.creator;
   const escrowed = bonded ? fee * CREATOR_ESCROW_SHARE : 0;

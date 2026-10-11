@@ -17,7 +17,43 @@ const TOKEN_DEFAULTS = {
   ageMin: 0,
   lobbySecs: 0,
   pen: 0,
+  vol24hUsd: 0,
+  change24h: 0,
 };
+
+// Pool balances that aren't derivable from the board (example figures).
+export const MOCK_POOLS = {
+  rektBackBalanceUsd: 48200,
+  rektBackPaidUsd: 12900,
+  herdVaultUsd: 31600,
+};
+
+// 24h market stats per token (lobby tokens have none yet).
+const MARKET = {
+  MOOVE: { vol24hUsd: 28400, change24h: 22.4 },
+  HOOF: { vol24hUsd: 9600, change24h: 41.7 },
+  RODEO: { vol24hUsd: 51200, change24h: 68.2 },
+  CUD: { vol24hUsd: 3100, change24h: -12.3 },
+  MILK: { vol24hUsd: 38900, change24h: 15.9 },
+  HAYDAY: { vol24hUsd: 7400, change24h: -4.8 },
+  BRAND: { vol24hUsd: 142000, change24h: 9.3 },
+  PEN: { vol24hUsd: 6200, change24h: 34.5 },
+  STOMP: { vol24hUsd: 61800, change24h: -6.1 },
+};
+
+// Deterministic fake price path for the sparkline, ending up or down with the 24h change.
+function sparkline(seed, change) {
+  let h = 0;
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) % 9973;
+  const points = [];
+  let v = 50;
+  for (let i = 0; i < 16; i += 1) {
+    h = (h * 1103 + 12345) % 9973;
+    v += (h / 9973 - 0.5) * 14 + change / 30;
+    points.push(v);
+  }
+  return points;
+}
 
 export const MOCK_BOARD = [
   { symbol: 'BELL', name: 'Cowbell', description: 'More cowbell. Always more cowbell.', status: 'lobby', bonded: true, bondSol: 5, vestDays: 90, launches: 2, lobbySecs: 12, pen: 240.5, herd: 530, fairScore: 90 },
@@ -32,7 +68,7 @@ export const MOCK_BOARD = [
   { symbol: 'BRAND', name: 'Brand', description: 'Marked for the moon.', status: 'broke', bonded: true, bondSol: 3, vestDays: 60, launches: 5, ageMin: 1440, price: '0.000021 SOL', clearingPrice: '0.0000040 SOL', marketCapUsd: 412000, herd: 5210, breakoutProgress: 100, fairScore: 92 },
   { symbol: 'PEN', name: 'Bull Pen', description: 'Where the herd waits for the bell.', status: 'curve', bonded: true, bondSol: 2, vestDays: 30, ageMin: 3, price: '0.0000043 SOL', clearingPrice: '0.0000041 SOL', marketCapUsd: 12300, herd: 214, breakoutProgress: 9, fairScore: 76 },
   { symbol: 'STOMP', name: 'Stomp', description: 'Snipers get stomped.', status: 'broke', ageMin: 4320, price: '0.000012 SOL', clearingPrice: '0.0000041 SOL', marketCapUsd: 168000, herd: 3020, breakoutProgress: 100, fairScore: 71 },
-].map((t) => ({ ...TOKEN_DEFAULTS, initial: t.name[0], ...t }));
+].map((t) => ({ ...TOKEN_DEFAULTS, initial: t.name[0], ...MARKET[t.symbol], ...t, spark: sparkline(t.symbol, MARKET[t.symbol]?.change24h ?? 0) }));
 
 export function findToken(symbol) {
   return MOCK_BOARD.find((t) => t.symbol === symbol?.toUpperCase());

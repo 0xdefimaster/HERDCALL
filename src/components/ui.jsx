@@ -65,6 +65,29 @@ export function Row({ label, children, className = '' }) {
   );
 }
 
+export function Sparkline({ points, up, width = 96, height = 28 }) {
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const span = max - min || 1;
+  const step = width / (points.length - 1);
+  const path = points.map((p, i) => `${(i * step).toFixed(1)},${(height - 2 - ((p - min) / span) * (height - 4)).toFixed(1)}`).join(' ');
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true" className="block">
+      <polyline fill="none" stroke={up ? '#7EE081' : '#FF6B6B'} strokeWidth="2" strokeLinejoin="round" points={path} />
+    </svg>
+  );
+}
+
+export function Change({ value }) {
+  if (!value) return <span className="text-hc-muted">—</span>;
+  const up = value > 0;
+  return (
+    <span className={`font-terminal text-xl leading-none whitespace-nowrap ${up ? 'text-hc-up' : 'text-hc-down'}`}>
+      {up ? '▲' : '▼'} {Math.abs(value).toFixed(1)}%
+    </span>
+  );
+}
+
 export function TokenAvatar({ initial, size = 'w-16 h-16 text-3xl' }) {
   return (
     <div className={`${size} shrink-0 bg-hc-navy border-[3px] border-hc-orange text-hc-orange flex items-center justify-center font-pixel font-bold`}>
