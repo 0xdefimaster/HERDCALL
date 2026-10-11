@@ -60,7 +60,7 @@ export default function Layout() {
 
       <footer className="border-t-[3px] border-hc-line">
         <div className="max-w-[1240px] mx-auto px-6 py-7 flex flex-wrap justify-between gap-3 text-[15px] text-hc-muted">
-          <span>HerdCall · Built on Solana · Official site: [YOUR DOMAIN] only</span>
+          <span>HerdCall · Built on Solana · Official site: herdcall.fun only</span>
           <span>Product concept. Mechanism security and feasibility to be independently verified. Memecoins are high risk.</span>
         </div>
       </footer>

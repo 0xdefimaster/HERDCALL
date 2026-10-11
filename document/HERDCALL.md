@@ -2,7 +2,7 @@
 
 > **No snipers. Just the herd.**
 > Solana üzerinde, sniper ve rug'a karşı tasarlanmış memecoin launchpad'i.
-> Resmi adres: **[DOMAIN]** (henüz alınmadı)
+> Resmi adres: **herdcall.fun** (Netlify)
 
 Tasarım kanvası (landing + uygulama ekranları): https://claude.ai/artifact/SWHaqagUV2LVYHTUufPo7f
 
@@ -202,7 +202,7 @@ Holder tablosunda küme üyeleri etiketlenir ("Cluster A" gibi).
 - **Görsel dil**: siyah zemin `#0A0A0B`, turuncu `#FF7A1A`, lacivert `#1F2A44` / `#AFC2EE`, krem metin `#FFF0DC`;
   köşeli kartlar, 3px kenarlık, sert gölgeler. Fontlar: Silkscreen (başlık), VT323 (rakamlar), Pixelify Sans (gövde).
 - **Metin kuralı**: Rekt-back için "refund / iade / insurance" denmez; "capped, pool-funded compensation".
-- Alınacaklar: domain (.fun / .xyz / .com), X handle, Telegram kullanıcı adı, marka tescil kontrolü
+- Alındı: herdcall.fun. Alınacaklar: yedek domainler (.xyz / .com), X handle, Telegram kullanıcı adı, marka tescil kontrolü
   ("herdcall launchpad", "herdcall solana" aramaları; "heardcall" yazımı için yedek domain).
 
 ## 12. Teknik notlar (Solana)
