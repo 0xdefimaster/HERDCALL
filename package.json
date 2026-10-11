@@ -1,18 +1,18 @@
 {
-  "name": "pyrepad",
+  "name": "herdcall",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-  "dev": "vite",
-  "start": "vite",
-  "build": "vite build",
-  "preview": "vite preview",
-  "compile": "hardhat compile",
-  "test": "hardhat test",
-  "deploy:localhost": "hardhat run scripts/deploy.js --network localhost",
-  "deploy:testnet": "hardhat run scripts/deploy.js --network monadTestnet",
-  "node": "hardhat node"
-},
+    "dev": "vite",
+    "start": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:localhost": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:testnet": "hardhat run scripts/deploy.js --network monadTestnet",
+    "node": "hardhat node"
+  },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0",
     "dotenv": "^17.3.1",
@@ -30,5 +30,6 @@
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19",
     "vite": "^5.0.0"
-  }
+  },
+  "description": "HerdCall - Solana community launchpad. No snipers. Just the herd."
 }
