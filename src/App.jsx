@@ -1,24 +1,31 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Web3Provider } from './Web3Context';
-import PyrePadLanding from './pyrepad-landing';
-import PyrePadDashboard from './pyrepad-dashboard';
-import LaunchesPage from './launches-page';
-import CreateLaunchPage from './CreateLaunchPage';
+import { WalletProvider } from './wallet/WalletContext';
+import Layout from './components/Layout';
+import Landing from './pages/Landing';
+import Lobby from './pages/Lobby';
+import Token from './pages/Token';
+import Create from './pages/Create';
+import Rekt from './pages/Rekt';
+import Takeover from './pages/Takeover';
 
 function App() {
   return (
-    <Web3Provider>
+    <WalletProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<PyrePadLanding />} />
-          <Route path="/dashboard" element={<PyrePadDashboard />} />
-          <Route path="/launches" element={<LaunchesPage />} />
-          <Route path="/create" element={<CreateLaunchPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route element={<Layout />}>
+            <Route path="/" element={<Landing />} />
+            <Route path="/lobby" element={<Lobby />} />
+            <Route path="/token" element={<Token />} />
+            <Route path="/create" element={<Create />} />
+            <Route path="/rekt-back" element={<Rekt />} />
+            <Route path="/takeover" element={<Takeover />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
         </Routes>
       </BrowserRouter>
-    </Web3Provider>
+    </WalletProvider>
   );
 }
 

@@ -1,8 +1,8 @@
-# Stampy — Ürün Tasarımı
+# HerdCall — Ürün Tasarımı
 
 > **No snipers. Just the herd.**
 > Solana üzerinde, sniper ve rug'a karşı tasarlanmış memecoin launchpad'i.
-> Resmi adres: **stampy.meme**
+> Resmi adres: **[DOMAIN]** (henüz alınmadı)
 
 Tasarım kanvası (landing + uygulama ekranları): https://claude.ai/artifact/SWHaqagUV2LVYHTUufPo7f
 
@@ -13,15 +13,17 @@ Tasarım kanvası (landing + uygulama ekranları): https://claude.ai/artifact/SW
 **Elimizde olanlar**
 - Bu doküman: ürün mekanikleri, ücret modeli, gelir dağıtımı, marka.
 - Tasarım kanvası: Landing, Lobby (çalışan geri sayım), Token sayfası (Fair Score),
-  Token oluşturma (Stamped anahtarı), Rekt-back profili.
-- Bu repo'daki mevcut PyrePad kodu: EVM / Solidity (Monad testnet) + React / Vite arayüzü.
-  Solana'ya taşınacak; on-chain kısım Anchor (Rust) ile yeniden yazılacak.
-- Domain: **stampy.meme** (stampy.fun alınmış).
+  Token oluşturma (Bellwether anahtarı), Rekt-back profili, Community Takeover oylaması.
+- React / Vite arayüzü (`src/`): kanvastaki 6 ekran, piksel tema, mock veri ve
+  Phantom cüzdan bağlantısı. Henüz on-chain işlem göndermiyor.
+- Eski PyrePad EVM kontratları (`contract/`, `scripts/`, `hardhat.config.js`) hâlâ repo'da;
+  on-chain kısım Anchor (Rust) ile yeniden yazılınca kaldırılacak.
+- İsim geçmişi: PyrePad → Stampy (stampy.fun başka bir launchpad'e ait olduğu için bırakıldı) → **HerdCall**.
 
 **Karar verilenler**
-- İsim ve marka: Stampy, boğa yavrusu maskot, İngilizce / global.
+- İsim ve marka: HerdCall, piksel boğa maskotu, İngilizce / global.
 - Lobby → Stampede → Curve → Breakout yaşam döngüsü (batch auction ile anti-sniper).
-- Stamped devler (isteğe bağlı bond + vesting), Fair Score, Rekt-back, Herd rank.
+- Bonded Creator (Bellwether) (isteğe bağlı bond + vesting), Fair Score, Rekt-back, Herd rank.
 - Protokol gelirinin 50 / 30 / 20 dağılımı ve token'ın gelirden **sonra** çıkması.
 - **CTO kuralı** (bkz. §6).
 
@@ -60,18 +62,18 @@ Hedef "güvenli" değil, **adil** bir oyun: kaybedebilirsin ama hilesiz kaybeder
 | **Curve** | Ardından normal bonding curve açılır, anlık al-sat. |
 | **Breakout** | Curve dolunca likidite DEX'e (Raydium / Meteora) taşınır ve kilitlenir. Mint ve freeze yetkisi program tarafından **zorunlu** olarak kaldırılır. Breakout sonrası DEX havuzu ücretinin bir kısmı (öneri: %25) likiditeye geri eklenir. |
 
-## 4. Stamped devler (ödül, ceza değil)
+## 4. Bonded Creator (Bellwether) (ödül, ceza değil)
 
 Damgalanmak **isteğe bağlıdır**. Damgasız token da açılabilir ama açıkça etiketlenir.
 
-| | Stamped | Unstamped |
+| | Bonded | Unbonded |
 |---|---|---|
 | Teminat (bond) | 2 / 3 / 5 SOL kilit | Yok |
 | Dev payı | 30 / 60 / 90 gün lineer vesting | Vesting yok |
 | Creator fee | **%0.30** | %0.10 |
 | Creator escrow | Gelirin %50'si breakout'a / vesting sonuna kadar bekler | Yok |
 | Feed sıralaması | Boost | Standart |
-| Rozet | 🛡️ Stamped | Yok |
+| Rozet | 🔔 Bellwether | Yok |
 
 - Teminat **breakout'ta** deve iade edilir.
 - Dev vesting bitmeden satarsa **trampled** olur: teminat **ve escrow'daki birikmiş creator geliri**
@@ -88,12 +90,12 @@ ve on-chain herkese açıktır.
 
 | | Creator | Arayüz / referans | Rekt-back havuzu | Protokol |
 |---|---|---|---|---|
-| Stamped token | %0.30 | %0.10 | %0.15 | %0.45 |
-| Unstamped token | %0.10 | %0.10 | %0.35 | %0.45 |
+| Bonded token | %0.30 | %0.10 | %0.15 | %0.45 |
+| Unbonded token | %0.10 | %0.10 | %0.35 | %0.45 |
 
 - **Arayüz / referans payı**: işlemi getiren terminal, Telegram botu ya da referans linki alır
   (Zora ve Clanker'daki model). Terminallerin entegre olması için ekonomik sebep.
-- Unstamped token'lar havuza daha çok öder, çünkü herd daha çok risk taşır.
+- Unbonded token'lar havuza daha çok öder, çünkü herd daha çok risk taşır.
 
 ## 6. ⭐ CTO kuralı (Community Takeover)
 
@@ -102,7 +104,7 @@ ve on-chain herkese açıktır.
 
 Neden önemli:
 - Memecoin kültüründe ölü dev'in token'ını topluluğun sahiplenmesi (CTO) zaten yaygın;
-  Stampy bunu **on-chain ve kurallı** hale getiren ilk launchpad olabilir.
+  HerdCall bunu **on-chain ve kurallı** hale getiren ilk launchpad olabilir.
 - Dev kaçsa bile token ölmek zorunda kalmaz: creator geliri artık topluluğun projesini finanse eder.
 - Trample + CTO birlikte çalışır: dump eden dev hem teminatını hem escrow'unu hem de
   **gelecekteki tüm creator gelirini** kaybeder.
@@ -112,7 +114,7 @@ Netleşecek parametreler:
 - Oylama eşiği: teklif için arzın en az %Y'si, kabul için katılanların çoğunluğu.
 - Multisig yapısı: kaç imzacı, imzacılar nasıl seçilir, kötüye kullanıma karşı zaman kilidi.
 - Saldırı senaryosu: dev aktifken balinaların CTO ile creator hakkını ele geçirmeye çalışması
-  → aktif ve Stamped dev'e karşı CTO açılamaz, sadece tetikleyiciler gerçekleşince açılır.
+  → aktif ve Bonded creator'e karşı CTO açılamaz, sadece tetikleyiciler gerçekleşince açılır.
 
 ## 7. Protokol gelirinin dağıtımı
 
@@ -121,15 +123,15 @@ audit, hukuk). Kalan kısım şöyle dağıtılır:
 
 | Kalem | Pay | Ne yapar |
 |---|---|---|
-| **Herd Vault** | %50 | ve$STAMP sahiplerinin oylamasıyla yönlendirilir |
+| **Herd Vault** | %50 | ve$HERD sahiplerinin oylamasıyla yönlendirilir |
 | **Builders Fund** | %30 | Hackathon ödülleri ve gerçek ürün çıkaran ekiplere hibeler |
 | **Operasyon / ekip** | %20 | Taban üstü operasyon ve ekip |
 
-**Herd Vault (ve$STAMP oylaması)**
-- Oy gücü için $STAMP 1–12 ay kilitlenir; uzun kilit = daha çok oy gücü (vote-escrow).
+**Herd Vault (ve$HERD oylaması)**
+- Oy gücü için $HERD 1–12 ay kilitlenir; uzun kilit = daha çok oy gücü (vote-escrow).
 - Tek cüzdanın oy gücüne üst sınır (balina ve oy satın alma riskine karşı).
 - Oylama serbest değil, **menüden** seçilir:
-  - $STAMP buyback & burn
+  - $HERD buyback & burn
   - Rekt-back havuzuna ek fon
   - Breakout yapan tokenlere likidite desteği
   - Builders Fund'a ek bütçe
@@ -142,7 +144,7 @@ audit, hukuk). Kalan kısım şöyle dağıtılır:
 - Ölçülebilir kriterler: on-chain kullanıcı sayısı, ürün yayında mı, kod açık mı.
 
 **Token zamanlaması**
-- $STAMP ilk gün çıkmaz. Token çıkana kadar Herd Vault payı **on-chain bir kasada birikir**,
+- $HERD ilk gün çıkmaz. Token çıkana kadar Herd Vault payı **on-chain bir kasada birikir**,
   token lansmanında oylamaya açılır. Gelir kanıtlanmış olur, token için beklenti oluşur.
 
 ## 8. Fair Score
@@ -151,7 +153,7 @@ Her token sayfasında 0–100 arası tek bir skor gösterilir. **Bir uyarıdır,
 düşük skorlu token da işlem görmeye devam eder.
 
 Girdiler:
-- Dev Stamped mi (bond miktarı, vesting süresi)
+- Dev Bonded (Bellwether) mi (bond miktarı, vesting süresi)
 - Dev geçmişi (kaç launch, kaçı trampled, kaçı breakout)
 - Top 10 holder yoğunluğu
 - Bağlantılı cüzdan kümeleri (aynı kaynaktan fonlanan cüzdanlar)
@@ -187,14 +189,21 @@ Holder tablosunda küme üyeleri etiketlenir ("Cluster A" gibi).
 
 ## 11. Marka
 
-- **İsim**: Stampy, "stampede"den gelir: sürü hep birlikte koşar, sniper ezilir.
-  Ayrıca "stamp" (damga, Stamped devler) ve "stomp" (ezmek) çağrışımları var.
-- **Maskot**: boğa yavrusu (bull run). Fil kullanılmaz (Simpsons'taki Stampy ile karışmaması için).
-- **Sözlük**: Lobby, Stampede, The Herd, Stamped, Trampled, Breakout, Rekt-back ("Back on your hooves").
-- **Sloganlar**: *No snipers. Just the herd.* · *Everyone runs. Nobody front-runs.* · *Run with the herd.*
-- **Görsel dil**: koyu sıcak zemin `#14120E`, Stampede turuncusu `#FF7A1A`, Stamped mavisi `#5AA9FF`;
-  Bricolage Grotesque (başlık), DM Sans (gövde), JetBrains Mono (rakamlar).
-- Alınacaklar: @stampyfun (X), Telegram kullanıcı adı, gerekirse yedek domainler.
+- **İsim**: HerdCall, çiftçinin sürüyü toplamak için yaptığı çağrı: kullanıcıları bir lansman
+  etrafında toplamak. Memecoin'deki ücretli "call" kanallarına karşı duruş:
+  *"No paid calls. Just the herd call."* Yedek isim: Bellow.
+- **Maskot**: piksel art boğa; lacivert şapka ve hoodie, güneş gözlüğü, hoodie'de boynuzlu "H".
+  Görsel `public/herdcall-hero.webp` (AI üretimi; lansmandan önce bir piksel sanatçısına temiz versiyonu çizdirilmeli).
+- **Logo işareti**: boynuzlu piksel "H" (`public/favicon.svg`, `src/components/icons.jsx`).
+- **Sözlük**: Lobby, Stampede, The Herd, Bonded Creator / **Bellwether** (rozet), Trampled, Breakout,
+  Rekt-back ("Back on your hooves"), Community Takeover.
+- **Sloganlar**: *No snipers. Just the herd.* · *Get in before the bell.* · *Answer the call.* ·
+  *Everyone runs. Nobody front-runs.*
+- **Görsel dil**: siyah zemin `#0A0A0B`, turuncu `#FF7A1A`, lacivert `#1F2A44` / `#AFC2EE`, krem metin `#FFF0DC`;
+  köşeli kartlar, 3px kenarlık, sert gölgeler. Fontlar: Silkscreen (başlık), VT323 (rakamlar), Pixelify Sans (gövde).
+- **Metin kuralı**: Rekt-back için "refund / iade / insurance" denmez; "capped, pool-funded compensation".
+- Alınacaklar: domain (.fun / .xyz / .com), X handle, Telegram kullanıcı adı, marka tescil kontrolü
+  ("herdcall launchpad", "herdcall solana" aramaları; "heardcall" yazımı için yedek domain).
 
 ## 12. Teknik notlar (Solana)
 
@@ -214,14 +223,14 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 
 1. **Ekonomi simülasyonu**: farklı hacimlerde ücret dağılımı, Rekt-back havuzu yeterliliği, operasyon tabanı.
 2. **Anchor programı v0**: launch + Lobby / Stampede + bonding curve + fee router (devnet).
-3. **Stamped katmanı**: bond, vesting, creator escrow, trample.
+3. **Bonded Creator katmanı**: bond, vesting, creator escrow, trample.
 4. **Breakout**: DEX migration + LP kilidi + yetki iptali.
-5. **Arayüz**: mevcut React uygulamasını Stampy tasarımına çevirmek, Solana cüzdan entegrasyonu.
+5. **Arayüz**: mevcut React uygulamasını HerdCall tasarımına çevirmek (yapıldı: mock veri + Phantom bağlantısı); gerçek on-chain çağrılar ve wallet-adapter.
    (Tasarım kanvasındaki ücret çubukları eski 0.5 / 0.3 / 0.2 dağılımını gösteriyor, güncellenecek.)
 6. **Fair Score indexer**: cluster analizi, dev geçmişi.
 7. **CTO modülü + Rekt-back talepleri.**
 8. **Audit → mainnet** (dar bir nişle başlangıç).
-9. **$STAMP + Herd Vault oylaması** (gelir kanıtlandıktan sonra).
+9. **$HERD + Herd Vault oylaması** (gelir kanıtlandıktan sonra).
 
 ## 14. Açık sorular
 
@@ -232,3 +241,4 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 - Operasyon tabanının aylık tutarı
 - Rekt-back'te "bağlantılı cüzdan dump'ı" tespitinin on-chain mi off-chain mi yapılacağı
 - Hukuki yapı (kumar / menkul kıymet riski, şirketin kurulacağı ülke)
+- Protokol token adı (`$HERD` şimdilik çalışma adı)
