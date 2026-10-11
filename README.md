@@ -8,7 +8,7 @@ Product design: [`document/HERDCALL.md`](document/HERDCALL.md)
 ## Frontend
 
 ```bash
-npm install --legacy-peer-deps   # hardhat 3 / toolbox 6 peer conflict in the legacy EVM tooling
+npm install                      # .npmrc sets legacy-peer-deps (hardhat 3 / toolbox 6 conflict)
 npm run dev                      # http://localhost:3000
 npm run build
 ```
