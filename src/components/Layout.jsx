@@ -5,10 +5,11 @@ import { PixelButton } from './ui';
 import { shortAddress, useWallet } from '../wallet/WalletContext';
 
 const NAV_LINKS = [
+  { to: '/', label: 'Board', end: true },
   { to: '/lobby', label: 'Lobby' },
-  { to: '/token', label: 'Tokens' },
   { to: '/takeover', label: 'Takeovers' },
   { to: '/rekt-back', label: 'Rekt-back' },
+  { to: '/how-it-works', label: 'How it works' },
 ];
 
 function WalletButton() {
@@ -41,6 +42,7 @@ export default function Layout() {
               <NavLink
                 key={link.to}
                 to={link.to}
+                end={link.end}
                 className={({ isActive }) =>
                   `no-underline ${isActive ? 'text-hc-orange font-bold' : 'text-hc-cream hover:text-hc-orange'}`
                 }

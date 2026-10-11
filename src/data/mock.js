@@ -1,26 +1,57 @@
 // Example data for the UI until the on-chain program and indexer exist.
-export const MOCK_TOKEN = {
-  name: 'Moove',
-  symbol: 'MOOVE',
-  initial: 'M',
-  description: 'The cow that jumped over the moon, now on Solana.',
-  bondSol: 3,
-  vestDays: 60,
-  launches: 3,
+
+// status: 'lobby' (countdown running) | 'curve' (trading on the bonding curve)
+//         | 'broke' (broke out to a DEX) | 'takeover' (community vote open)
+const TOKEN_DEFAULTS = {
+  bonded: false,
+  bondSol: 0,
+  vestDays: 0,
+  launches: 1,
   trampled: 0,
-  price: '0.0000063 SOL',
-  clearingPrice: '0.0000041 SOL',
-  marketCap: '$41.2K',
-  herd: 688,
-  breakoutProgress: 62,
-  fairScore: 86,
+  price: '—',
+  clearingPrice: '—',
+  marketCapUsd: 0,
+  herd: 0,
+  breakoutProgress: 0,
+  fairScore: 50,
+  ageMin: 0,
+  lobbySecs: 0,
+  pen: 0,
 };
 
+export const MOCK_BOARD = [
+  { symbol: 'BELL', name: 'Cowbell', description: 'More cowbell. Always more cowbell.', status: 'lobby', bonded: true, bondSol: 5, vestDays: 90, launches: 2, lobbySecs: 12, pen: 240.5, herd: 530, fairScore: 90 },
+  { symbol: 'MOOVE', name: 'Moove', description: 'The cow that jumped over the moon, now on Solana.', status: 'curve', bonded: true, bondSol: 3, vestDays: 60, launches: 3, ageMin: 14, price: '0.0000063 SOL', clearingPrice: '0.0000041 SOL', marketCapUsd: 41200, herd: 688, breakoutProgress: 62, fairScore: 86 },
+  { symbol: 'GRAZE', name: 'Graze', description: 'Slow and steady eats the field.', status: 'lobby', lobbySecs: 48, pen: 72.0, herd: 158, fairScore: 61 },
+  { symbol: 'HOOF', name: 'Hoofprint', description: 'Leave a mark on the chain.', status: 'curve', bonded: true, bondSol: 2, vestDays: 30, ageMin: 6, price: '0.0000029 SOL', clearingPrice: '0.0000024 SOL', marketCapUsd: 18400, herd: 301, breakoutProgress: 34, fairScore: 82 },
+  { symbol: 'RODEO', name: 'Rodeo', description: 'Eight seconds on the bull, eight weeks on the chart.', status: 'curve', bonded: true, bondSol: 5, vestDays: 60, launches: 4, ageMin: 42, price: '0.0000098 SOL', clearingPrice: '0.0000040 SOL', marketCapUsd: 63100, herd: 1204, breakoutProgress: 91, fairScore: 88 },
+  { symbol: 'TAILS', name: 'Tail Swish', description: 'Swatting snipers since block one.', status: 'lobby', bonded: true, bondSol: 2, vestDays: 30, lobbySecs: 33, pen: 58.3, herd: 121, fairScore: 79 },
+  { symbol: 'CUD', name: 'Cud Chewer', description: 'Chew on this.', status: 'curve', ageMin: 11, price: '0.0000016 SOL', clearingPrice: '0.0000019 SOL', marketCapUsd: 9700, herd: 96, breakoutProgress: 18, fairScore: 44 },
+  { symbol: 'MILK', name: 'Milk Run', description: 'Fresh every morning.', status: 'curve', ageMin: 63, price: '0.0000087 SOL', clearingPrice: '0.0000039 SOL', marketCapUsd: 55800, herd: 870, breakoutProgress: 84, fairScore: 57 },
+  { symbol: 'HAYDAY', name: 'Hay Day', description: 'Creator ran. The herd stayed.', status: 'takeover', ageMin: 28800, price: '0.0000034 SOL', clearingPrice: '0.0000041 SOL', marketCapUsd: 22600, herd: 1530, breakoutProgress: 100, fairScore: 63, trampled: 1 },
+  { symbol: 'BRAND', name: 'Brand', description: 'Marked for the moon.', status: 'broke', bonded: true, bondSol: 3, vestDays: 60, launches: 5, ageMin: 1440, price: '0.000021 SOL', clearingPrice: '0.0000040 SOL', marketCapUsd: 412000, herd: 5210, breakoutProgress: 100, fairScore: 92 },
+  { symbol: 'PEN', name: 'Bull Pen', description: 'Where the herd waits for the bell.', status: 'curve', bonded: true, bondSol: 2, vestDays: 30, ageMin: 3, price: '0.0000043 SOL', clearingPrice: '0.0000041 SOL', marketCapUsd: 12300, herd: 214, breakoutProgress: 9, fairScore: 76 },
+  { symbol: 'STOMP', name: 'Stomp', description: 'Snipers get stomped.', status: 'broke', ageMin: 4320, price: '0.000012 SOL', clearingPrice: '0.0000041 SOL', marketCapUsd: 168000, herd: 3020, breakoutProgress: 100, fairScore: 71 },
+].map((t) => ({ ...TOKEN_DEFAULTS, initial: t.name[0], ...t }));
+
+export function findToken(symbol) {
+  return MOCK_BOARD.find((t) => t.symbol === symbol?.toUpperCase());
+}
+
+export function formatUsd(n) {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+  return `$${n}`;
+}
+
+export function formatAge(minutes) {
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h`;
+  return `${Math.floor(minutes / 1440)}d`;
+}
+
 export const MOCK_LOBBY = {
-  windowSecs: 30,
-  startSecs: 27,
-  herd: 412,
-  pen: 186.4,
+  windowSecs: 60,
   joins: [
     { who: '9fQe…xT2m', sol: '1.0' },
     { who: 'Bk7r…aa91', sol: '0.25' },
