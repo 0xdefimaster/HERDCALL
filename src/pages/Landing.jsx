@@ -36,6 +36,12 @@ const FEATURES = [
     body: 'When a creator breaks the rules, holders are paid pro-rata from the pool. Plus XP for coming back.',
   },
   {
+    Icon: CycleIcon,
+    title: 'Lucky Hoof',
+    tagline: '1 in 100 losses refunded',
+    body: 'Held a bag 7+ days and sold at a loss, or held it to zero? Every week one in every hundred tickets gets its loss back, up to 5 SOL.',
+  },
+  {
     Icon: HLogo,
     title: 'Bonded Creator',
     tagline: 'Bond, vesting & escrow',

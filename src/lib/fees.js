@@ -14,6 +14,16 @@ export const PROTOCOL_SPLIT = [
   { key: 'operations', pct: 20, title: 'Operations', note: 'Team, audits, infra' },
 ];
 
+// Lucky Hoof: weekly VRF draw that refunds 1 in `odds` long-hold losses (document/HERDCALL.md §9).
+export const LUCKY_HOOF = {
+  odds: 100,
+  minHoldDays: 7,
+  deadTokenDays: 30,
+  minLossSol: 0.1,
+  maxPayoutSol: 5,
+  rektBackShare: 25, // % of Rekt-back pool inflows set aside for the draw
+};
+
 export const LOBBY_WINDOWS = [15, 30, 60];
 export const BOND_OPTIONS = [2, 3, 5];
 export const VEST_OPTIONS = [30, 60, 90];

@@ -152,6 +152,10 @@ function RevenuePanel() {
           <div className="text-[13px] text-hc-muted">Paid to holders</div>
           <div className="font-terminal text-2xl leading-none">{formatUsd(MOCK_POOLS.rektBackPaidUsd)}</div>
         </div>
+        <Link to="/rekt-back" className="col-span-2 no-underline text-hc-cream hover:text-hc-orange">
+          <div className="text-[13px] text-hc-muted">Lucky Hoof fund · 1 in 100 long-hold losses refunded</div>
+          <div className="font-terminal text-2xl leading-none">{formatUsd(MOCK_POOLS.luckyHoofUsd)}</div>
+        </Link>
       </div>
       <p className="mt-3 mb-0 text-[13px] text-hc-muted">Example figures. Live numbers will be read straight from the program's fee vaults.</p>
     </Card>
@@ -304,11 +308,12 @@ export default function Board() {
           </p>
         </section>
 
-        <section className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
+        <section className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
           {[
             { Icon: HLogo, title: 'Fair launch', body: 'One clearing price for everyone in the Lobby.', to: '/how-it-works' },
             { Icon: ChartIcon, title: 'Fair Score', body: 'Creator history, holder clusters and risk on every token.', to: '/how-it-works' },
             { Icon: CycleIcon, title: 'Rekt-back', body: 'Capped compensation when a creator breaks the rules.', to: '/rekt-back' },
+            { Icon: HLogo, title: 'Lucky Hoof', body: 'Held 7+ days at a loss? 1 in 100 tickets gets refunded every week.', to: '/rekt-back' },
           ].map(({ Icon, title, body, to }) => (
             <Link key={title} to={to} className="flex gap-3 items-start no-underline text-hc-cream bg-hc-surface border-[3px] border-hc-line p-4 hover:border-hc-orange hover:text-hc-cream">
               <Icon size={28} />
