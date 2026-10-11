@@ -1,21 +1,30 @@
 import React, { useEffect, useState } from 'react';
+import { Navigate, useParams } from 'react-router-dom';
 import { Bar, Card, CardTitle, PixelButton, Row, Tag, TokenAvatar } from '../components/ui';
-import { MOCK_LOBBY, MOCK_TOKEN } from '../data/mock';
+import { MOCK_BOARD, MOCK_LOBBY, findToken } from '../data/mock';
 import { useWallet } from '../wallet/WalletContext';
 
 const QUICK_AMOUNTS = ['0.1', '0.5', '1', '5'];
 
-function formatClock(secs) {
-  return `00:${String(secs).padStart(2, '0')}`;
+export function formatClock(secs) {
+  return `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
 }
 
-export default function Lobby() {
+export default function LobbyRoute() {
+  const { symbol } = useParams();
+  const token = symbol ? findToken(symbol) : MOCK_BOARD.find((t) => t.status === 'lobby');
+  if (!token) return <Navigate to="/" replace />;
+  if (token.status !== 'lobby') return <Navigate to={`/token/${token.symbol}`} replace />;
+  return <Lobby key={token.symbol} token={token} />;
+}
+
+function Lobby({ token }) {
   const { publicKey, connect } = useWallet();
-  const [secs, setSecs] = useState(MOCK_LOBBY.startSecs);
+  const [secs, setSecs] = useState(token.lobbySecs);
   const [amount, setAmount] = useState('0.5');
   const [joined, setJoined] = useState(false);
-  const [herd, setHerd] = useState(MOCK_LOBBY.herd);
-  const [pen, setPen] = useState(MOCK_LOBBY.pen);
+  const [herd, setHerd] = useState(token.herd);
+  const [pen, setPen] = useState(token.pen);
 
   useEffect(() => {
     if (secs === 0) return undefined;
@@ -38,19 +47,28 @@ export default function Lobby() {
     <main className="max-w-[1240px] mx-auto px-6 pt-8 pb-12 flex flex-wrap gap-6 items-stretch">
       <Card aria-label="Token" className="flex-[1_1_260px] min-w-0 flex flex-col gap-4">
         <div className="flex items-center gap-3.5">
-          <TokenAvatar initial={MOCK_TOKEN.initial} />
+          <TokenAvatar initial={token.initial} />
           <div>
-            <h1 className="m-0 font-pixel font-bold text-2xl leading-tight">{MOCK_TOKEN.name}</h1>
-            <div className="font-terminal text-xl text-hc-muted">${MOCK_TOKEN.symbol}</div>
+            <h1 className="m-0 font-pixel font-bold text-2xl leading-tight">{token.name}</h1>
+            <div className="font-terminal text-xl text-hc-muted">${token.symbol}</div>
           </div>
         </div>
-        <p className="m-0 text-hc-body">{MOCK_TOKEN.description}</p>
+        <p className="m-0 text-hc-body">{token.description}</p>
         <div className="border-t-[3px] border-dashed border-hc-line pt-4 flex flex-col gap-2.5 text-base">
-          <Row label="Creator"><Tag>Bellwether</Tag></Row>
-          <Row label="Bond"><span className="font-terminal text-[22px]">{MOCK_TOKEN.bondSol}.0 SOL</span></Row>
-          <Row label="Creator bag vests"><span className="font-terminal text-[22px]">{MOCK_TOKEN.vestDays} days</span></Row>
-          <Row label="Fee escrow">50% to breakout</Row>
-          <Row label="History">{MOCK_TOKEN.launches} launches · {MOCK_TOKEN.trampled} trampled</Row>
+          {token.bonded ? (
+            <>
+              <Row label="Creator"><Tag>Bellwether</Tag></Row>
+              <Row label="Bond"><span className="font-terminal text-[22px]">{token.bondSol}.0 SOL</span></Row>
+              <Row label="Creator bag vests"><span className="font-terminal text-[22px]">{token.vestDays} days</span></Row>
+              <Row label="Fee escrow">50% to breakout</Row>
+            </>
+          ) : (
+            <>
+              <Row label="Creator"><Tag tone="outline">Unbonded</Tag></Row>
+              <Row label="Bond">None</Row>
+            </>
+          )}
+          <Row label="History">{token.launches} launches · {token.trampled} trampled</Row>
         </div>
       </Card>
 
@@ -60,7 +78,7 @@ export default function Lobby() {
             <div className="font-pixel text-[15px] text-hc-muted">The bell has rung</div>
             <div className="font-pixel font-bold uppercase leading-[1.05] text-hc-orange text-[clamp(36px,5vw,60px)]">The herd is in.</div>
             <p className="m-0 text-hc-body">
-              Everyone entered at <span className="font-terminal text-2xl text-hc-cream">{MOCK_TOKEN.clearingPrice}</span>. Curve trading is open.
+              Everyone entered at the same clearing price. Curve trading is open.
             </p>
           </>
         ) : (

@@ -20,6 +20,8 @@ export default {
           body: '#E6D6BF',
           muted: '#B5A893',
           warn: '#FFD23F',
+          up: '#7EE081',
+          down: '#FF6B6B',
         },
       },
       fontFamily: {
