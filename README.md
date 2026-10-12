@@ -17,6 +17,15 @@ Pages: `/` landing, `/lobby`, `/token`, `/create`, `/rekt-back`, `/takeover`.
 All data is mock (`src/data/mock.js`); fee splits live in `src/lib/fees.js`.
 Wallet: minimal Phantom connection (`src/wallet/WalletContext.jsx`), no transactions are sent yet.
 
+## Stampede model
+
+Technical spec: [`document/STAMPEDE_SPEC.md`](document/STAMPEDE_SPEC.md). Reference model and tests (no dependencies):
+
+```bash
+npm run test:sim   # invariant tests
+npm run sim        # scenario tables
+```
+
 ## Legacy
 
 `contract/`, `scripts/` and `hardhat.config.js` are the old PyrePad EVM contracts. The on-chain

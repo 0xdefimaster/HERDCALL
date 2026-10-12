@@ -1,6 +1,7 @@
 import React from 'react';
-import { Bar, Card, CardTitle, PixelButton } from '../components/ui';
-import { MOCK_BADGES, MOCK_CLAIMS, XP_RULES } from '../data/mock';
+import { Bar, Card, CardTitle, PixelButton, Tag } from '../components/ui';
+import { MOCK_BADGES, MOCK_CLAIMS, MOCK_LUCKY_HOOF, MOCK_POOLS, XP_RULES, formatUsd } from '../data/mock';
+import { LUCKY_HOOF } from '../lib/fees';
 
 const RANKS = ['Calf', 'Yearling', 'Bull', 'Bellwether'];
 const CURRENT_RANK = 'Yearling';
@@ -38,6 +39,69 @@ export default function Rekt() {
             })}
           </ol>
         </div>
+      </Card>
+
+      <Card aria-label="Lucky Hoof" highlight className="flex flex-col gap-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 max-w-[620px]">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <CardTitle className="text-2xl">Lucky Hoof</CardTitle>
+              <Tag tone="orange">1 in {LUCKY_HOOF.odds}</Tag>
+            </div>
+            <p className="mt-2 mb-0 text-hc-body">
+              Held a bag for {LUCKY_HOOF.minHoldDays}+ days and sold at a loss, or held it all the way to zero? That's a ticket. Every week one in every{' '}
+              {LUCKY_HOOF.odds} tickets gets its full loss refunded, up to {LUCKY_HOOF.maxPayoutSol} SOL.
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-sm text-hc-muted">Next draw in</div>
+            <div className="font-terminal text-5xl leading-[0.9] text-hc-orange">{MOCK_LUCKY_HOOF.drawIn}</div>
+          </div>
+        </div>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+          {[
+            ['Tickets this week', MOCK_LUCKY_HOOF.ticketsThisWeek.toLocaleString('en-US')],
+            ['Winners this week', Math.floor(MOCK_LUCKY_HOOF.ticketsThisWeek / LUCKY_HOOF.odds)],
+            ['Fund balance', formatUsd(MOCK_POOLS.luckyHoofUsd)],
+            ['Odds per ticket', `${(100 / LUCKY_HOOF.odds).toFixed(0)}%`],
+          ].map(([label, value]) => (
+            <div key={label} className="bg-hc-bg border-[3px] border-hc-line p-3">
+              <div className="text-sm text-hc-muted">{label}</div>
+              <div className="font-terminal text-[32px] leading-none">{value}</div>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-6">
+          <div className="flex-[1_1_320px] min-w-0">
+            <h3 className="m-0 font-pixel font-bold text-sm uppercase">Your tickets</h3>
+            <ul className="list-none mt-2.5 mb-0 p-0 flex flex-col gap-2">
+              {MOCK_LUCKY_HOOF.yourTickets.map((t) => (
+                <li key={t.token} className="flex justify-between gap-3 pb-2 border-b-2 border-dashed border-hc-line">
+                  <span>
+                    <span className="font-terminal text-[22px]">{t.token}</span>{' '}
+                    <span className="text-sm text-hc-muted">{t.how} · held {t.heldDays}d</span>
+                  </span>
+                  <span className="font-terminal text-[22px] text-hc-down whitespace-nowrap">-{t.lossSol} SOL</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="flex-[1_1_280px] min-w-0">
+            <h3 className="m-0 font-pixel font-bold text-sm uppercase">Last week's Lucky Hooves</h3>
+            <ul className="list-none mt-2.5 mb-0 p-0 flex flex-col gap-2">
+              {MOCK_LUCKY_HOOF.lastWinners.map((w) => (
+                <li key={w.who} className="flex justify-between gap-3 pb-2 border-b-2 border-dashed border-hc-line">
+                  <span className="font-terminal text-[22px]">{w.who} <span className="text-hc-muted">{w.token}</span></span>
+                  <span className="font-terminal text-[22px] text-hc-up whitespace-nowrap">+{w.sol} SOL</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <p className="m-0 text-sm text-hc-muted">
+          Winners are picked with on-chain randomness (VRF) that anyone can verify. One ticket per wallet, per token, per week; minimum loss {LUCKY_HOOF.minLossSol} SOL.
+          Tokens with no trades for {LUCKY_HOOF.deadTokenDays} days count as held to zero. Refunds are capped by the fund: not insurance, not a guarantee.
+        </p>
       </Card>
 
       <div className="flex flex-wrap gap-6 items-start">
