@@ -60,4 +60,6 @@ pub enum HerdError {
     NotUpgradeAuthority,
     #[msg("Wallet address must not be the default pubkey")]
     InvalidWallet,
+    #[msg("Protocol pool balance is insufficient (rent exemption must be kept)")]
+    InsufficientProtocolPool,
 }

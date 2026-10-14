@@ -328,3 +328,24 @@ pub async fn init_config(env: &mut Env) -> Result<(), BanksClientError> {
     let i = ix_init_config(&admin.pubkey(), &program_data_pda(), init_args(env));
     env.send(&[i], &[&admin]).await
 }
+
+pub fn ix_distribute(authority: &Pubkey, builders: &Pubkey, ops: &Pubkey, amount: u64) -> Instruction {
+    ix(
+        herdcall::accounts::DistributeProtocol {
+            authority: *authority,
+            config: config_pda(),
+            protocol_pool: protocol_pda(),
+            herd_vault: vault_pda(),
+            builders_fund: *builders,
+            ops_wallet: *ops,
+        },
+        herdcall::instruction::DistributeProtocol { amount },
+    )
+}
+
+pub fn ix_update_wallets(authority: &Pubkey, treasury: Pubkey, builders: Pubkey, ops: Pubkey) -> Instruction {
+    ix(
+        herdcall::accounts::UpdateWallets { authority: *authority, config: config_pda() },
+        herdcall::instruction::UpdateWallets { treasury, builders_fund: builders, ops_wallet: ops },
+    )
+}
