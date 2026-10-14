@@ -4,9 +4,6 @@
 name: herdcall-program
 
 on:
-  push:
-    branches: ["fix/herdcall-v8-audit", "program/**"]
-    paths: ["herdcall-program/**", ".github/workflows/herdcall-program.yml"]
   pull_request:
     paths: ["herdcall-program/**", ".github/workflows/herdcall-program.yml"]
   workflow_dispatch:
@@ -153,6 +150,7 @@ jobs:
             damm_dump=${{ steps.damm_dump.outcome }}
             sbf_tests=${{ steps.sbf_tests.outcome }}
         run: |
+          set +e +o pipefail # rapor eksik dosyalarda da tamamlanmali
           L="$RUNNER_TEMP/logs"; R="$RUNNER_TEMP/report.md"
           {
             echo "<!-- herdcall-ci-report -->"
