@@ -1,0 +1,16 @@
+[toolchain]
+anchor_version = "0.30.1"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+herdcall = "8XTPwS47mzBUPWP1GhGH7M5dMBwA4pJ8eCJQqffzk4yd"
+
+[programs.devnet]
+herdcall = "8XTPwS47mzBUPWP1GhGH7M5dMBwA4pJ8eCJQqffzk4yd"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
