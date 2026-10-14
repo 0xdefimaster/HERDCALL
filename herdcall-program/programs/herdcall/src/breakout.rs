@@ -43,6 +43,13 @@ pub fn pool_sol(
         .ok_or(HerdError::InsufficientCurveReserve.into())
 }
 
+/// Breakout'ta launch PDA'sindan cikarilacak toplam SOL (havuz + acma maliyeti butcesi).
+/// `breakout` instruction'i ve testler ayni fonksiyonu kullanir.
+/// Pro-rata yuvarlama tamponu (`Launch::refund_rounding_buffer`) launch'ta birakilir.
+pub fn breakout_sweep_sol(l: &crate::state::Launch) -> Result<u64> {
+    pool_sol(l.accepted_total, l.virtual_sol, l.initial_virtual_sol, l.refund_rounding_buffer())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

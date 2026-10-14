@@ -53,7 +53,8 @@ pub fn sell(ctx: Context<Sell>, tokens_in: u64, min_sol_out: u64) -> Result<()> 
     require!(q.gross_out > 0, HerdError::TradeTooSmall);
 
     // Solvency: odeme, curve'in gercek SOL rezervini asamaz (iade bekleyen Stampede fazlasi ayri).
-    let real = curve::real_sol(l.accepted_total, l.virtual_sol, l.initial_virtual_sol);
+    let real = curve::real_sol(l.accepted_total, l.virtual_sol, l.initial_virtual_sol)
+        - l.refund_rounding_buffer() as i128;
     require!(real >= q.gross_out as i128, HerdError::InsufficientCurveReserve);
 
     let split = split_fee(q.gross_out, l.bonded)?;

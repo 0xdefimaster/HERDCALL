@@ -27,7 +27,7 @@ use anchor_spl::token::{
     SetAuthority, SyncNative, Token, TokenAccount,
 };
 
-use crate::breakout::{lp_tokens, pool_sol};
+use crate::breakout::{breakout_sweep_sol, lp_tokens};
 use crate::constants::*;
 use crate::errors::HerdError;
 use crate::events::*;
@@ -134,8 +134,8 @@ pub fn breakout_launch<'info>(
 
     let l = &ctx.accounts.launch;
     let cost = ctx.accounts.config.breakout_cost_lamports;
-    let total_sol = pool_sol(l.accepted_total, l.virtual_sol, l.initial_virtual_sol, 0)?;
-    let wsol_amount = pool_sol(l.accepted_total, l.virtual_sol, l.initial_virtual_sol, cost)?;
+    let total_sol = breakout_sweep_sol(l)?;
+    let wsol_amount = total_sol.checked_sub(cost).ok_or(HerdError::InsufficientCurveReserve)?;
     let lp = lp_tokens()?;
 
     let launch_key = ctx.accounts.launch.key();

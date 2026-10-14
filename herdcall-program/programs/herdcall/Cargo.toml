@@ -22,3 +22,11 @@ anchor-spl = "0.30.1"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))', 'cfg(feature, values("anchor-debug", "custom-heap", "custom-panic", "solana"))'] }
+
+[dev-dependencies]
+solana-program-test = "=1.18.26"
+solana-sdk = "=1.18.26"
+spl-token = { version = "4", features = ["no-entrypoint"] }
+spl-associated-token-account = { version = "3", features = ["no-entrypoint"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+bincode = "1"

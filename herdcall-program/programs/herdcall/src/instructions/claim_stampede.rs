@@ -8,6 +8,7 @@ use crate::errors::HerdError;
 use crate::events::*;
 use crate::fees::claim_fee;
 use crate::state::*;
+use crate::trade::{credit, debit};
 
 #[derive(Accounts)]
 pub struct ClaimStampede<'info> {
@@ -60,33 +61,30 @@ pub fn claim_stampede(ctx: Context<ClaimStampede>) -> Result<()> {
     let l = &ctx.accounts.launch;
     let deposit = ctx.accounts.order.amount;
 
+    // Breakout sonrasi da claim acik kalir: token'lar settle'da escrow'a basildi (mint yetkisi
+    // gerekmez) ve cap-fazlasi iadeler breakout'ta launch PDA'sinda birakilir.
     let (accepted, tokens) = match l.state {
-        LaunchState::Curve | LaunchState::CurveFull => crate::stampede::claim_amounts(
-            deposit,
-            l.total_deposited,
-            l.cap_lamports,
-            l.accepted_total,
-            l.stampede_tokens,
-        )?,
+        LaunchState::Curve | LaunchState::CurveFull | LaunchState::Breakout => {
+            crate::stampede::claim_amounts(
+                deposit,
+                l.total_deposited,
+                l.cap_lamports,
+                l.accepted_total,
+                l.stampede_tokens,
+            )?
+        }
         LaunchState::Failed => (0, 0), // tam iade
-        _ => return err!(HerdError::InvalidState),
+        LaunchState::Lobby => return err!(HerdError::InvalidState),
     };
     let refund = deposit.checked_sub(accepted).ok_or(HerdError::MathOverflow)?;
+    let fee = claim_fee(accepted, l.claim_fee_bps)?;
+    // Ucret once iadeden kesilir; iade yetmezse kalan kullanicinin cuzdanindan alinir.
+    let fee_from_refund = fee.min(refund);
+    let fee_from_wallet = fee - fee_from_refund;
 
-    // Iade: launch PDA'sindan dogrudan lamport transferi (program-owned hesap).
-    if refund > 0 {
-        let launch_info = ctx.accounts.launch.to_account_info();
-        let owner_info = ctx.accounts.owner.to_account_info();
-        **launch_info.try_borrow_mut_lamports()? = launch_info
-            .lamports()
-            .checked_sub(refund)
-            .ok_or(HerdError::MathOverflow)?;
-        **owner_info.try_borrow_mut_lamports()? = owner_info
-            .lamports()
-            .checked_add(refund)
-            .ok_or(HerdError::MathOverflow)?;
-    }
-
+    // SIRA ONEMLI: tum CPI'lar dogrudan lamport hareketlerinden ONCE yapilir. Runtime, CPI'dan
+    // once cagiranin hesap toplaminin dengeli oldugunu dogrular (UnbalancedInstruction);
+    // once launch->owner lamport tasiyip sonra launch'i iceren bir CPI yapmak islemi dusurur.
     if tokens > 0 {
         let mint_key = ctx.accounts.mint.key();
         let seeds: &[&[u8]] = &[LAUNCH_SEED, mint_key.as_ref(), &[l.bump]];
@@ -103,11 +101,7 @@ pub fn claim_stampede(ctx: Context<ClaimStampede>) -> Result<()> {
             tokens,
         )?;
     }
-
-    // Claim ucreti: kabul edilen SOL uzerinden, launch'taki rezerve DOKUNMADAN
-    // kullanicinin cuzdanindan protokol havuzuna (curve solvency degismezi korunur).
-    let fee = claim_fee(accepted, l.claim_fee_bps)?;
-    if fee > 0 {
+    if fee_from_wallet > 0 {
         sol_transfer(
             CpiContext::new(
                 ctx.accounts.system_program.to_account_info(),
@@ -116,8 +110,19 @@ pub fn claim_stampede(ctx: Context<ClaimStampede>) -> Result<()> {
                     to: ctx.accounts.protocol_pool.to_account_info(),
                 },
             ),
-            fee,
+            fee_from_wallet,
         )?;
+    }
+
+    // Dogrudan lamport hareketleri (CPI yok): launch -> owner (iade - ucret), launch -> protokol.
+    // Launch'taki curve rezervine dokunulmaz: iade emanetinden odenir.
+    if refund > 0 {
+        let launch_info = ctx.accounts.launch.to_account_info();
+        debit(&launch_info, refund)?;
+        credit(&ctx.accounts.owner.to_account_info(), refund - fee_from_refund)?;
+        credit(&ctx.accounts.protocol_pool.to_account_info(), fee_from_refund)?;
+    }
+    if fee > 0 {
         let pp = &mut ctx.accounts.protocol_pool;
         pp.total_in = pp.total_in.checked_add(fee).ok_or(HerdError::MathOverflow)?;
     }
