@@ -75,6 +75,8 @@ mod tests {
                 break;
             }
         }
-        assert_eq!(pool_sol(accepted, vs, vs0, 0).unwrap(), 15 * accepted);
+        // Alimlarda yuvarlama (ceil) havuz lehinedir: birkac lamport fazla olabilir, eksik olamaz.
+        let got = pool_sol(accepted, vs, vs0, 0).unwrap();
+        assert!(got >= 15 * accepted && got - 15 * accepted <= 10, "pool_sol={got}");
     }
 }
