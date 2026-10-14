@@ -56,4 +56,10 @@ pub enum HerdError {
     InsufficientPoolTokens,
     #[msg("Burn ratio can only be increased, never lowered")]
     BurnBpsCannotDecrease,
+    #[msg("Only the program upgrade authority can initialize the config")]
+    NotUpgradeAuthority,
+    #[msg("Wallet address must not be the default pubkey")]
+    InvalidWallet,
+    #[msg("Protocol pool balance is insufficient (rent exemption must be kept)")]
+    InsufficientProtocolPool,
 }

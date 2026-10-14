@@ -43,6 +43,13 @@ pub fn pool_sol(
         .ok_or(HerdError::InsufficientCurveReserve.into())
 }
 
+/// Breakout'ta launch PDA'sindan cikarilacak toplam SOL (havuz + acma maliyeti butcesi).
+/// `breakout` instruction'i ve testler ayni fonksiyonu kullanir.
+/// Pro-rata yuvarlama tamponu (`Launch::refund_rounding_buffer`) launch'ta birakilir.
+pub fn breakout_sweep_sol(l: &crate::state::Launch) -> Result<u64> {
+    pool_sol(l.accepted_total, l.virtual_sol, l.initial_virtual_sol, l.refund_rounding_buffer())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,6 +82,8 @@ mod tests {
                 break;
             }
         }
-        assert_eq!(pool_sol(accepted, vs, vs0, 0).unwrap(), 15 * accepted);
+        // Alimlarda yuvarlama (ceil) havuz lehinedir: birkac lamport fazla olabilir, eksik olamaz.
+        let got = pool_sol(accepted, vs, vs0, 0).unwrap();
+        assert!(got >= 15 * accepted && got - 15 * accepted <= 10, "pool_sol={got}");
     }
 }

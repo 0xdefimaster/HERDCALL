@@ -5,7 +5,9 @@ Kaynak tasarım: `document/HERDCALL.md`. Yol haritası 2. adım.
 ## Kapsam (v0)
 | Instruction | Ne yapar |
 |---|---|
-| `initialize_config` | Config + RektPool + HerdVault hesaplarını açar |
+| `initialize_config` | Config + RektPool + HerdVault + ProtocolPool + DaoPool hesaplarını açar. **Sadece programın upgrade authority'si** çağırabilir (`program_data` hesabı seed ile doğrulanır); treasury/builders/ops varsayılan adres olamaz |
+| `distribute_protocol` | Sadece authority: ProtocolPool SOL'unu §7'ye göre %50 HerdVault / %30 Builders / %20 Ops böler (rent korunur). Operasyon tabanı zincirde YOK: tutarı authority belirler |
+| `update_wallets` | Sadece authority: treasury / builders_fund / ops_wallet günceller |
 | `claim_position_fee` | Permissionless. Breakout sonrası kilitli pozisyonun ücretini DAMM'den toplar. Token ve SOL ayrı ayrı `split_lp_fees` ile %60 creator / %20 protokol / %20 `DaoPool`. Creator payı: `creator_eligible()` ise `creator_burn_bps` kısmı yakıma (token: yakılır, SOL: `burn_reserve`'e), kalanı `creator_payout`'a; hak yoksa payın TAMAMI yakıma. Protokol/DAO **token** payı kendi PDA'larının ATA'larında birikir (yakılmaz), SOL payı havuz PDA'larına gider. Dağıtım bakiye farkından hesaplanır. Hesap sayısı fazla: ALT kullan. **Devnet testi yapılmadı** |
 | `set_fee_prefs` | Sadece creator: LP ücret payının ödeme cüzdanı ve yakım oranı (0–10 000 bps). Yakım oranı YALNIZCA artırılabilir, cüzdan serbestçe değişir. Varsayılan: creator, yakım 0 |
 | `commit_tokens` / `withdraw_commit` | Creator, token'ını program escrow'una kilitler (`commit_auth` PDA'sının ATA'sı). Gelir hakkı: `committed_tokens >= min_commit_tokens` (Config `min_creator_commit_bps`, launch'a snapshot) ve hak kaybı yok. Escrow'dan çekim eşiğin altına indirirse `creator_forfeited` KALICI true olur; sonrasında hem işlem ücreti (`buy`/`sell`) hem LP ücreti payı creator'a değil yakıma gider. Taahhüt dışı token'lar sade holder bakiyesidir. Taahhüt yapılana kadar creator payı da yakıma gider |
@@ -17,7 +19,7 @@ Kaynak tasarım: `document/HERDCALL.md`. Yol haritası 2. adım.
 | `create_launch` | Mint (freeze authority YOK) + Launch PDA, Lobby 15/30/60 sn |
 | `lobby_deposit` | SOL'ü launch PDA'sında escrow'lar, kullanıcı başına bir `LobbyOrder` |
 | `settle_stampede` | Permissionless. Min. katılım tamamsa `Curve` ve Stampede token'larının TAMAMI escrow'a basılır (mint yetkisi claim'e bağlı değil), değilse `Failed` |
-| `claim_stampede` | Pull modeli: escrow'dan token transferi + cap fazlası iadesi, emri kapatır. Claim ücreti (SOL, kabul edilen tutarın `claim_fee_bps`'i) kullanıcının cüzdanından protokol havuzuna gider; curve rezervine dokunmaz |
+| `claim_stampede` | `Curve`, `CurveFull`, `Breakout` ve `Failed` durumlarında açık. Pull modeli: escrow'dan token transferi + cap fazlası iadesi, emri kapatır. Claim ücreti (SOL, kabul edilen tutarın `claim_fee_bps`'i) kullanıcının cüzdanından protokol havuzuna gider; curve rezervine dokunmaz |
 | `buy` / `sell` | Bonding curve (x·y=k, sanal rezerv). Başlangıç fiyatı = Stampede clearing price. Satışta token yakılır. `min_*_out` ile slippage koruması |
 | fee router (`trade.rs`) | Her işlemde %1 → creator / arayüz / Rekt-back havuzu / protokol havuzu, gerçek SOL hareketiyle, zorunlu |
 
@@ -38,14 +40,20 @@ yani curve boyunca fiyat 4× artar. Launch büyüklüğünü belirleyen düğme 
 - Curve dolunca (`CurveFull`) işlem durur ve SOL breakout'u bekler. Breakout yazılana kadar
   mainnet'e çıkma: fonlar takılı kalır.
 - Alıcı cüzdanı (creator/arayüz) rent-muafiyetinin altında kalıyorsa o ücret protokol havuzuna yönlendirilir.
-- `initialize_config` ilk çağıranı authority yapar: deploy sonrası hemen çağır
-  (ya da upgrade authority'ye kilitle).
+- `initialize_config` artık upgrade authority'ye kilitli (ön-çalıştırma/front-run riski kapandı).
+- RektPool SOL biriktirir ama çıkış yolu yok (v1 tasarımı, dağıtım kuralları v2'de). Mainnet öncesi karar gerekli.
+- `breakout` / `buyback_burn`: CPI'dan önce doğrudan lamport hareketi var; zincirde `UnbalancedInstruction`
+  ile düşme ihtimali yüksek ve DAMM havuzu önceden açılarak breakout kilitlenebilir. Ayrıntı: `SECURITY_REVIEW.md`.
 - Lobby'de son saniye avantajı var (süre sabit). Çözüm: rastgele bitiş / candle auction.
 - Cüzdan başına limit yok; Sybil'e karşı asıl koruma toplam cap + orantılı iade.
 - Stampede token'ları claim'de mint edilir; curve eklenince toplam mint ≤ TOTAL_SUPPLY
   garanti edilmeli.
 
-## Derleme
-`cargo check` / `cargo test` Rust 1.89 + anchor-lang 0.30.1 ile doğrulandı.
-`anchor build` (SBF) ve devnet testi YAPILMADI. SBF araç zincirinin rustc'si eski olabilir;
-yeni geçişli bağımlılıklar derlenmezse `cargo update -p <crate> --precise <eski sürüm>` gerekebilir.
+## Derleme ve testler
+`cargo test` (Rust 1.97, anchor-lang 0.30.1, `Cargo.lock` sabitli) birim testleri + `tests/` altındaki
+instruction seviyesi entegrasyon testlerini çalıştırır. Entegrasyon testleri `solana-program-test` ile
+programı NATIVE çalıştırır (SBF değil); SPL Token/ATA paketli BPF sürümleridir. Meteora DAMM v2
+yüklü değildir: `breakout`, `claim_position_fee`, `buyback_burn` CPI'ları test EDİLMEZ; breakout sonrası
+durum gerektiğinde simüle edilir (`tests/common::simulate_breakout`).
+
+`anchor build` (SBF), IDL üretimi ve devnet/localnet testi YAPILMADI (araç zinciri bu ortamda indirilemedi).

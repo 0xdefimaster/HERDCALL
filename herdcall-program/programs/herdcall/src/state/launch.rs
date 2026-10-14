@@ -82,4 +82,16 @@ impl Launch {
     pub fn creator_eligible(&self) -> bool {
         !self.creator_forfeited && self.committed_tokens >= self.min_commit_tokens
     }
+
+    /// Cap asildiginda her emrin `accepted` payi asagi yuvarlanir; toplam kabul edilen SOL
+    /// `accepted_total`'dan en fazla `depositors` lamport az olur ve fark IADE olarak odenir.
+    /// Bu tampon curve rezervinden sayilmaz (satis ve breakout dokunamaz), boylece son
+    /// claim edenin iadesi eksik kalmaz.
+    pub fn refund_rounding_buffer(&self) -> u64 {
+        if self.total_deposited > self.cap_lamports {
+            self.depositors as u64
+        } else {
+            0
+        }
+    }
 }

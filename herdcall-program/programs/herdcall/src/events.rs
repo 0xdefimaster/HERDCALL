@@ -159,3 +159,21 @@ pub struct PoolTokensWithdrawn {
     pub destination: Pubkey,
     pub amount: u64,
 }
+
+#[event]
+pub struct ProtocolDistributed {
+    pub authority: Pubkey,
+    pub amount: u64,
+    pub to_herd_vault: u64,
+    pub to_builders: u64,
+    pub to_ops: u64,
+    pub pool_total_distributed: u64,
+}
+
+#[event]
+pub struct WalletsUpdated {
+    pub authority: Pubkey,
+    pub treasury: Pubkey,
+    pub builders_fund: Pubkey,
+    pub ops_wallet: Pubkey,
+}

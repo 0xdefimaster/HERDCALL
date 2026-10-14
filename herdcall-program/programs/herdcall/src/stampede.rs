@@ -85,4 +85,23 @@ mod tests {
             assert!(st <= TOKENS);
         }
     }
+
+    /// Cap asildiginda toplam kabul edilen SOL, `accepted_total`'dan en fazla `depositors`
+    /// lamport eksik kalir (Launch::refund_rounding_buffer bu siniri kullanir).
+    #[test]
+    fn rounding_deficit_bounded_by_depositor_count() {
+        let mut x: u64 = 0xDEADBEEFCAFEBABE;
+        for n in [1usize, 2, 3, 17, 500, 5000] {
+            let mut deps = Vec::new();
+            for _ in 0..n {
+                x ^= x << 13; x ^= x >> 7; x ^= x << 17;
+                deps.push(10_000_000 + x % 3_000_000_007);
+            }
+            let total: u64 = deps.iter().sum();
+            let cap = total / 3 + 1; // oversubscribed
+            let (sa, _) = run(&deps, cap);
+            let deficit = cap - sa;
+            assert!(deficit <= n as u64, "n={n} deficit={deficit}");
+        }
+    }
 }

@@ -83,6 +83,21 @@ pub mod herdcall {
         instructions::withdraw_dao::withdraw_dao(ctx, amount)
     }
 
+    /// Sadece authority: ProtocolPool SOL'unu 50/30/20 (HerdVault / Builders / Ops) dagitir.
+    pub fn distribute_protocol(ctx: Context<DistributeProtocol>, amount: u64) -> Result<()> {
+        instructions::distribute_protocol::distribute_protocol(ctx, amount)
+    }
+
+    /// Sadece authority: treasury / builders_fund / ops_wallet adreslerini gunceller.
+    pub fn update_wallets(
+        ctx: Context<UpdateWallets>,
+        treasury: Pubkey,
+        builders_fund: Pubkey,
+        ops_wallet: Pubkey,
+    ) -> Result<()> {
+        instructions::distribute_protocol::update_wallets(ctx, treasury, builders_fund, ops_wallet)
+    }
+
     // ---- launch yasam dongusu ----
     pub fn create_launch(ctx: Context<CreateLaunch>, lobby_secs: i64, bonded: bool) -> Result<()> {
         instructions::create_launch::create_launch(ctx, lobby_secs, bonded)

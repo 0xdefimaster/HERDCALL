@@ -55,9 +55,9 @@ const _: () = assert!(LP_FEE_CREATOR_BPS + LP_FEE_PROTOCOL_BPS + LP_FEE_DAO_BPS 
 
 // ---- Breakout (Meteora DAMM v2 / cp-amm) ----
 // Program ID ve pool authority: resmi IDL (MeteoraAg/damm-v2-sdk, cp_amm.json v0.2.5).
-pub const DAMM_PROGRAM_ID: Pubkey = anchor_lang::solana_program::pubkey!("cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG");
-pub const DAMM_POOL_AUTHORITY: Pubkey = anchor_lang::solana_program::pubkey!("HLnpSz9h2S4hiLQ43rnSD9XkcUThA7B8hQMKmDaiTLcC");
-pub const TOKEN_2022_PROGRAM_ID: Pubkey = anchor_lang::solana_program::pubkey!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
+pub const DAMM_PROGRAM_ID: Pubkey = pubkey!("cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG");
+pub const DAMM_POOL_AUTHORITY: Pubkey = pubkey!("HLnpSz9h2S4hiLQ43rnSD9XkcUThA7B8hQMKmDaiTLcC");
+pub const TOKEN_2022_PROGRAM_ID: Pubkey = pubkey!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 pub const BREAKOUT_AUTH_SEED: &[u8] = b"breakout_auth";
 /// Havuza fiilen girenin, planlananin en az bu kadari (bps) olmali; aksi halde islem geri alinir.
 /// Cagiran `liquidity`/`sqrt_price`'i zincir disinda hesaplar; yanlis/kotu niyetli deger fonlari

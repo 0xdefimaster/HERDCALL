@@ -1,0 +1,211 @@
+# HerdCall Anchor programi: native testler + SBF derlemesi (anchor build) + gercek Meteora DAMM v2
+# binary'si ile LiteSVM testleri. Tum araclar sabit surumlu. Mainnet'e HICBIR islem gonderilmez:
+# yalnizca `solana program dump` / `solana account` ile salt-okunur RPC cagrisi yapilir.
+name: herdcall-program
+
+on:
+  pull_request:
+    paths: ["herdcall-program/**", ".github/workflows/herdcall-program.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write # yalnizca sonuc ozetini PR yorumuna yazmak icin
+
+concurrency:
+  group: herdcall-program-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_TOOLCHAIN: "1.97.0"          # host: native testler + LiteSVM testleri
+  ANCHOR_CLI_RUST_TOOLCHAIN: "1.79.0" # anchor-cli 0.30.1 `--locked` derlemesi (>=1.80 'time' hatasi)
+  AGAVE_VERSION: "v2.3.13"          # cargo-build-sbf + solana CLI
+  ANCHOR_VERSION: "v0.30.1"         # programin anchor-lang surumuyle ayni
+  DAMM_PROGRAM_ID: "cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG"
+  # Meteora'nin kendi layout testinde kullandigi gercek, PUBLIC static config (mainnet)
+  DAMM_PUBLIC_CONFIG: "TBuzuEMMQizTjpZhRLaUPavALhZmD8U1hwiw1pWSCSq"
+  MAINNET_RPC: "https://api.mainnet-beta.solana.com"
+  CARGO_TERM_COLOR: never
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Prepare log dir
+        run: mkdir -p "$RUNNER_TEMP/logs" "$RUNNER_TEMP/out"
+
+      - name: Cache cargo + solana toolchains
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/anchor
+            ~/.local/share/solana
+            ~/.cache/solana
+            herdcall-program/target
+            herdcall-program/tests-sbf/target
+          key: hc-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-${{ env.AGAVE_VERSION }}-${{ env.ANCHOR_VERSION }}-${{ hashFiles('herdcall-program/Cargo.lock', 'herdcall-program/tests-sbf/Cargo.lock') }}
+          restore-keys: |
+            hc-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-${{ env.AGAVE_VERSION }}-${{ env.ANCHOR_VERSION }}-
+
+      - name: Install Rust toolchains
+        id: rust
+        run: |
+          set -o pipefail
+          {
+            rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+            rustup toolchain install "$ANCHOR_CLI_RUST_TOOLCHAIN" --profile minimal
+            rustup default "$RUST_TOOLCHAIN"
+            rustc --version; cargo --version
+          } 2>&1 | tee "$RUNNER_TEMP/logs/rust.log"
+
+      - name: Native unit + integration tests (solana-program-test)
+        id: native
+        working-directory: herdcall-program
+        run: |
+          set -o pipefail
+          cargo test --locked 2>&1 | tee "$RUNNER_TEMP/logs/native.log"
+
+      - name: Install Agave (Solana) CLI
+        id: agave
+        run: |
+          set -o pipefail
+          {
+            BIN="$HOME/.local/share/solana/install/active_release/bin"
+            if ! "$BIN/solana" --version 2>/dev/null | grep -q " ${AGAVE_VERSION#v} "; then
+              sh -c "$(curl -sSfL https://release.anza.xyz/${AGAVE_VERSION}/install)"
+            fi
+            echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+            solana --version
+            cargo-build-sbf --version
+          } 2>&1 | tee "$RUNNER_TEMP/logs/agave.log"
+
+      - name: Install anchor-cli
+        id: anchor_cli
+        run: |
+          set -o pipefail
+          {
+            if ! ~/.cargo/bin/anchor --version 2>/dev/null | grep -q "${ANCHOR_VERSION#v}"; then
+              cargo +"$ANCHOR_CLI_RUST_TOOLCHAIN" install --git https://github.com/coral-xyz/anchor \
+                --tag "$ANCHOR_VERSION" anchor-cli --locked --force
+            fi
+            anchor --version
+          } 2>&1 | tee "$RUNNER_TEMP/logs/anchor_cli.log"
+
+      - name: anchor build (SBF + IDL)
+        id: anchor_build
+        working-directory: herdcall-program
+        run: |
+          set -o pipefail
+          {
+            mkdir -p ~/.config/solana
+            [ -f ~/.config/solana/id.json ] || solana-keygen new --no-bip39-passphrase -s -o ~/.config/solana/id.json
+            anchor build
+            ls -l target/deploy target/idl
+            sha256sum target/deploy/herdcall.so | tee "$RUNNER_TEMP/out/herdcall.so.sha256"
+          } 2>&1 | tee "$RUNNER_TEMP/logs/anchor_build.log"
+
+      - name: Fetch Meteora DAMM v2 program + public config from mainnet (read-only RPC)
+        id: damm_dump
+        run: |
+          set -o pipefail
+          {
+            solana program dump -u "$MAINNET_RPC" "$DAMM_PROGRAM_ID" "$RUNNER_TEMP/out/cp_amm.so"
+            sha256sum "$RUNNER_TEMP/out/cp_amm.so"
+            solana program show -u "$MAINNET_RPC" "$DAMM_PROGRAM_ID" || true
+            solana account -u "$MAINNET_RPC" "$DAMM_PUBLIC_CONFIG" --output-file "$RUNNER_TEMP/out/public_config.bin"
+            sha256sum "$RUNNER_TEMP/out/public_config.bin"
+            solana slot -u "$MAINNET_RPC"
+          } 2>&1 | tee "$RUNNER_TEMP/logs/damm_dump.log"
+
+      - name: SBF tests (LiteSVM + real herdcall.so + real cp_amm.so)
+        id: sbf_tests
+        working-directory: herdcall-program/tests-sbf
+        env:
+          HERDCALL_SO: ${{ github.workspace }}/herdcall-program/target/deploy/herdcall.so
+          DAMM_SO: ${{ runner.temp }}/out/cp_amm.so
+          DAMM_PUBLIC_CONFIG_BIN: ${{ runner.temp }}/out/public_config.bin
+        run: |
+          set -o pipefail
+          cargo test --locked -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/logs/sbf_tests.log"
+
+      - name: Compose report
+        id: report
+        if: always()
+        env:
+          OUTCOMES: >-
+            rust=${{ steps.rust.outcome }}
+            native=${{ steps.native.outcome }}
+            agave=${{ steps.agave.outcome }}
+            anchor_cli=${{ steps.anchor_cli.outcome }}
+            anchor_build=${{ steps.anchor_build.outcome }}
+            damm_dump=${{ steps.damm_dump.outcome }}
+            sbf_tests=${{ steps.sbf_tests.outcome }}
+        run: |
+          set +e +o pipefail # rapor eksik dosyalarda da tamamlanmali
+          L="$RUNNER_TEMP/logs"; R="$RUNNER_TEMP/report.md"
+          {
+            echo "<!-- herdcall-ci-report -->"
+            echo "### herdcall-program CI: \`${GITHUB_SHA::7}\` (run ${GITHUB_RUN_ID}, ${GITHUB_EVENT_NAME})"
+            echo
+            echo "| step | outcome |"; echo "|---|---|"
+            for kv in $OUTCOMES; do echo "| ${kv%%=*} | ${kv#*=} |"; done
+            echo
+            echo "<details><summary>versions / hashes</summary>"; echo; echo '```'
+            grep -hE "^rustc |^cargo |^solana-cli|^solana-cargo-build-sbf|^platform-tools|^rustc .*|^anchor-cli" "$L"/rust.log "$L"/agave.log "$L"/anchor_cli.log 2>/dev/null
+            cat "$RUNNER_TEMP/out/herdcall.so.sha256" 2>/dev/null
+            grep -hE "cp_amm.so|public_config.bin|Last Deployed|Authority|Data Length|^[0-9]+$" "$L"/damm_dump.log 2>/dev/null
+            echo '```'; echo "</details>"; echo
+            for f in native sbf_tests; do
+              [ -f "$L/$f.log" ] || continue
+              echo "<details><summary>$f: test results</summary>"; echo; echo '```'
+              grep -E "^test .* \.\.\. |^test result|Running |panicked at|^failures:" "$L/$f.log" | head -150
+              echo '```'; echo "</details>"; echo
+            done
+            for kv in $OUTCOMES; do
+              k=${kv%%=*}; v=${kv#*=}
+              if [ "$v" = "failure" ] && [ -f "$L/$k.log" ]; then
+                echo "<details><summary>$k: last 120 log lines</summary>"; echo; echo '```'
+                tail -n 120 "$L/$k.log" | cut -c1-300
+                echo '```'; echo "</details>"; echo
+              fi
+            done
+            if [ -f "$L/sbf_tests.log" ]; then
+              echo "<details><summary>sbf_tests: REPORT lines</summary>"; echo; echo '```'
+              grep -E "^REPORT" "$L/sbf_tests.log" | cut -c1-400 | head -200
+              echo '```'; echo "</details>"
+            fi
+          } > "$R"
+          head -c 60000 "$R" > "$R.trim"; mv "$R.trim" "$R"
+          cat "$R" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post report to PR
+        if: always()
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync(`${process.env.RUNNER_TEMP}/report.md`, 'utf8');
+            const { owner, repo } = context.repo;
+            let prs = [];
+            if (context.payload.pull_request) {
+              prs = [context.payload.pull_request.number];
+            } else {
+              const branch = context.ref.replace('refs/heads/', '');
+              const res = await github.rest.pulls.list({ owner, repo, head: `${owner}:${branch}`, state: 'open' });
+              prs = res.data.map(p => p.number);
+            }
+            for (const number of prs) {
+              const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number });
+              const mine = comments.find(c => c.body && c.body.startsWith('<!-- herdcall-ci-report -->'));
+              if (mine) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+              else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
+            }
