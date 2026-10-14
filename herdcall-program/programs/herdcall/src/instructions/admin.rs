@@ -15,9 +15,21 @@ pub struct InitializeConfigArgs {
 
 #[derive(Accounts)]
 pub struct InitializeConfig<'info> {
-    /// Ilk authority. Mainnet'te bir Squads multisig PDA'si olmali.
+    /// Ilk authority = programin UPGRADE AUTHORITY'si (mainnet'te Squads multisig).
+    /// Deploy ile initialize arasindaki yarista baskasinin Config'i ele gecirmesini engeller.
     #[account(mut)]
     pub authority: Signer<'info>,
+    /// Bu programin ProgramData hesabi: adres seed ile turetilir (baska bir programin
+    /// ProgramData'si verilemez); upgrade authority imzalayanla ayni olmali. Program
+    /// degistirilemez (immutable) yapildiysa upgrade authority None'dir ve init reddedilir.
+    #[account(
+        seeds = [crate::ID.as_ref()],
+        bump,
+        seeds::program = anchor_lang::solana_program::bpf_loader_upgradeable::ID,
+        constraint = program_data.upgrade_authority_address == Some(authority.key())
+            @ HerdError::NotUpgradeAuthority
+    )]
+    pub program_data: Account<'info, ProgramData>,
     #[account(init, payer = authority, space = 8 + Config::INIT_SPACE, seeds = [CONFIG_SEED], bump)]
     pub config: Account<'info, Config>,
     #[account(init, payer = authority, space = 8 + RektPool::INIT_SPACE, seeds = [REKT_POOL_SEED], bump)]
@@ -33,6 +45,7 @@ pub struct InitializeConfig<'info> {
 
 pub fn initialize_config(ctx: Context<InitializeConfig>, args: InitializeConfigArgs) -> Result<()> {
     args.params.validate()?;
+    validate_wallets(&args.treasury, &args.builders_fund, &args.ops_wallet)?;
     let c = &mut ctx.accounts.config;
     c.authority = ctx.accounts.authority.key();
     c.pending_authority = Pubkey::default();
@@ -55,6 +68,13 @@ pub fn initialize_config(ctx: Context<InitializeConfig>, args: InitializeConfigA
     ctx.accounts.herd_vault.bump = ctx.bumps.herd_vault;
     ctx.accounts.protocol_pool.bump = ctx.bumps.protocol_pool;
     ctx.accounts.dao_pool.bump = ctx.bumps.dao_pool;
+    Ok(())
+}
+
+pub(crate) fn validate_wallets(treasury: &Pubkey, builders: &Pubkey, ops: &Pubkey) -> Result<()> {
+    for w in [treasury, builders, ops] {
+        require!(*w != Pubkey::default(), HerdError::InvalidWallet);
+    }
     Ok(())
 }
 

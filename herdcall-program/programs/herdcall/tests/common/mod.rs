@@ -294,17 +294,24 @@ pub async fn simulate_breakout(env: &mut Env, mint: &Pubkey) -> u64 {
 
 pub fn lamports_of(a: &Account) -> u64 { a.lamports() }
 
-pub async fn init_config(env: &mut Env) -> Result<(), BanksClientError> {
-    let admin = env.admin.insecure_clone();
-    let args = herdcall::instructions::InitializeConfigArgs {
+pub fn init_args(env: &Env) -> herdcall::instructions::InitializeConfigArgs {
+    herdcall::instructions::InitializeConfigArgs {
         treasury: env.treasury,
         builders_fund: env.builders,
         ops_wallet: env.ops,
         params: default_params(),
-    };
-    let i = ix(
+    }
+}
+
+pub fn ix_init_config(
+    authority: &Pubkey,
+    program_data: &Pubkey,
+    args: herdcall::instructions::InitializeConfigArgs,
+) -> Instruction {
+    ix(
         herdcall::accounts::InitializeConfig {
-            authority: admin.pubkey(),
+            authority: *authority,
+            program_data: *program_data,
             config: config_pda(),
             rekt_pool: rekt_pda(),
             herd_vault: vault_pda(),
@@ -313,6 +320,11 @@ pub async fn init_config(env: &mut Env) -> Result<(), BanksClientError> {
             system_program: system_program::id(),
         },
         herdcall::instruction::InitializeConfig { args },
-    );
+    )
+}
+
+pub async fn init_config(env: &mut Env) -> Result<(), BanksClientError> {
+    let admin = env.admin.insecure_clone();
+    let i = ix_init_config(&admin.pubkey(), &program_data_pda(), init_args(env));
     env.send(&[i], &[&admin]).await
 }
