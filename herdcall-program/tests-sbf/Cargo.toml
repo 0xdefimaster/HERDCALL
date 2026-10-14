@@ -1,0 +1,20 @@
+[package]
+name = "herdcall-sbf-tests"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "SBF-level tests: real herdcall.so (anchor build) + real Meteora DAMM v2 binary in LiteSVM"
+
+# Ayri workspace: solana 1.18 tabanli program crate'i ile ayni bagimlilik grafigine girmez.
+[workspace]
+
+[dependencies]
+litesvm = "=0.11.0"
+# DAMM v2 kaynagi: yalnizca hesap layout'lari, PDA tohumlari ve likidite matematigi icin
+# (calistirilan program mainnet'ten dump edilen binary'dir). Commit sabit.
+cp-amm = { git = "https://github.com/MeteoraAg/damm-v2", rev = "a85c926607433f23f0ea60f4ca7b1ae92f4156cb", features = ["cpi"] }
+anchor-lang = "1"
+bytemuck = "1"
+borsh = "1"
+sha2 = "0.10"
+solana-address = "2"

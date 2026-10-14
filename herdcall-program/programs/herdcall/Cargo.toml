@@ -3,6 +3,7 @@ name = "herdcall"
 version = "0.1.0"
 description = "HerdCall - anti-sniper launchpad (Lobby -> Stampede -> Curve -> Breakout)"
 edition = "2021"
+rust-version = "1.79"
 
 [lib]
 crate-type = ["cdylib", "lib"]
