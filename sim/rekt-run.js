@@ -2,7 +2,9 @@
 import { NATIVE } from './stampede.js';
 import {
   HONEST_MIX,
+  POLICY,
   bestFarm,
+  buyback,
   cappedSafetyMargin,
   freshCurve,
   heldPairTrip,
@@ -10,6 +12,7 @@ import {
   honestMultiplier,
   multiplier,
   pairTrip,
+  policyPool,
   rng,
   roundTrip,
   sandwich,
@@ -144,3 +147,53 @@ table(
   ),
 );
 
+
+// ------------------------------------------------------------ v0.1 policy re-runs
+const policyDesign = { mRekt: POLICY.mRekt, mHold: POLICY.mHold, gate: POLICY.gate, gateDays: POLICY.gateDays, cap: POLICY.cap };
+const pm = honestMultiplier(policyDesign);
+const OPS = 100; // example operations floor per season, in native
+const worst = (H, extra = {}) => ({ pool: 'policy', H, mBar: pm, mF: POLICY.cap, cF: cheapest, alpha: POLICY.alpha, opsFloor: OPS, dh: { ellH: dhHonest, farmerEligible: 1 }, ...extra });
+
+console.log(`## 6. v0.1 policy across season revenue (alpha ${POLICY.alpha}, ops floor ${OPS} SOL, worst-case farmer)\n`);
+table(
+  ['Honest volume (SOL)', 'Protocol revenue H', 'Pool (SOL)', 'Pool / revenue', 'Best farm profit', 'Honest keep if someone burns 1×H'],
+  [10_000, 50_000, 100_000, 1_000_000, 10_000_000].map((vol) => {
+    const H = vol * 0.0045;
+    const p = worst(H);
+    const pool = policyPool(H, { opsFloor: OPS });
+    const forcedPool = policyPool(2 * H, { opsFloor: OPS });
+    const forcedHonest = forcedPool === 0 ? 0 : (forcedPool * pm * H) / (pm * H + POLICY.cap * H);
+    return [vol.toLocaleString('en-US'), f(H, 0), f(pool, 1), pct(pool / H), f(bestFarm(p).profit, 1), pool === 0 ? '—' : pct(forcedHonest / pool)];
+  }),
+);
+
+console.log('## 7. $HERD price scenarios: rejected fixed token budget vs. v0.1 policy (H = 450 SOL)\n');
+{
+  const H = 450;
+  const pool = policyPool(H, { opsFloor: OPS });
+  const basePrice = 0.0001; // native per $HERD at 1x
+  const B = pool / basePrice; // fixed budget sized to match the policy pool at 1x
+  table(
+    ['$HERD price', 'Fixed B_t: pool value', 'Fixed: farm profit', 'Fixed: honest keep', 'Policy: pool value', 'Policy: farm profit', 'Policy: $HERD bought (M)'],
+    [0.1, 0.5, 1, 2, 5, 10].map((mult) => {
+      const price = basePrice * mult;
+      const fixed = bestFarm({ pool: 'fixed', H, mBar: pm, mF: POLICY.cap, cF: cheapest, budgetValue: B * price, dh: { ellH: dhHonest, farmerEligible: 1 } });
+      const pol = bestFarm(worst(H));
+      const tokens = buyback({ value: pool, liquidity: 2000, price, chunks: 28 }).tokens;
+      return [`${f(mult, 1)}x`, f(B * price, 0), f(fixed.profit, 1), pct(fixed.honestRewardRatio), f(pool, 1), f(pol.profit, 1), f(tokens / 1e6, 2)];
+    }),
+  );
+}
+
+console.log('## 8. Controlled purchase: premium paid over the starting price\n');
+table(
+  ['Pool / $HERD liquidity', 'One purchase', '7 chunks', '28 chunks (4 a day, 7 days)', 'Chunks for <= 0.5% each'],
+  [0.01, 0.05, 0.1, 0.5, 1].map((ratio) => {
+    const run = (chunks) => pct2(buyback({ value: ratio * 1000, liquidity: 1000, price: 1, chunks }).premium);
+    return [f(ratio), run(1), run(7), run(28), String(Math.ceil(ratio / 0.005))];
+  }),
+);
+
+function pct2(v) {
+  return `${(v * 100).toFixed(2)}%`;
+}

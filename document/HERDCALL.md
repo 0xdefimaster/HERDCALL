@@ -140,7 +140,8 @@ Netleşecek parametreler:
 ## 7. Protokol gelirinin dağıtımı
 
 Protokol payından (%0.45) önce **Diamond Hooves bütçesi** (protokol gelirinin 1/50'si, §9) ayrılır,
-sonra **operasyon tabanı** dolar (aylık sabit bütçe: RPC, indexer, audit, hukuk). Kalan kısım şöyle dağıtılır:
+sonra **operasyon tabanı** dolar (aylık sabit bütçe: RPC, indexer, audit, hukuk), ardından **Rekt Mining payı**
+(gelirin en fazla %25'i, [`REKT_MINING.md`](REKT_MINING.md) §7.1; aşama 5'ten itibaren). Kalan kısım şöyle dağıtılır:
 
 | Kalem | Pay | Ne yapar |
 |---|---|---|
@@ -233,16 +234,20 @@ ve fonun yeterliliği öngörülemiyordu. Diamond Hooves'ta şans yoktur; şart�
 **Not**: Tutarlar küçüktür (örnekte ödenen ücretin birkaç %'si). Oran (`revenueDivisor`) tek bir parametredir;
 gerçek hacim ve hak kazanan pozisyon verisi geldikçe gözden geçirilecek.
 
-### Rekt Mining: "kaybetsen bile kazanırsın", sınırlı havuzla (öneri, aşama 5)
+### Rekt Mining: "kaybetsen bile kazanırsın", sınırlı havuzla (v0.1 politikası, aşama 5)
 
 Papertrade / EOS betting mining psikolojisi, kayba göre sınırsız token basmadan. Ayrıntı ve simülasyon:
 [`REKT_MINING.md`](REKT_MINING.md).
 
 - Sezon puanı = ödenen **protokol ücreti** × çarpan. Zarar çarpanı (1,5x) yalnızca **7+ gün** tutulup zararla
   kapanan pozisyonlarda; tutma çarpanı 1,25x; toplam çarpan en fazla 2x.
-- Havuzun değeri sezon protokol gelirinin $\alpha$ payıyla sınırlı (öneri $\alpha = 0{,}25$). Bu koşulla hiçbir farm
-  büyüklüğü kâr etmez (ispat ve test şartnamede). Sabit token bütçesi reddedildi: $HERD fiyatı yükselince farm kârlı olur.
-- Diamond Hooves'tan ayrı bütçe ve ayrı muhasebe. Board ve trend sıralaması ham hacme göre yapılmaz.
+- Havuz **SOL cinsinden** ve sezon protokol gelirinin en fazla %25'i ($\alpha \le 0{,}25$); ayrı bir Rekt Mining
+  gelir payı. Bu koşulla hiçbir farm büyüklüğü kâr etmez (ispat ve test şartnamede). Sabit token bütçesi reddedildi:
+  $HERD fiyatı yükselince farm kârlı olur.
+- Ödül sezon kapanışından sonra dağıtılır: Merkle listesi, itiraz süresi, ardından $HERD gelirle **kontrollü alınır**
+  (yeni token basılmaz) ve pull-claim ile çekilir.
+- Diamond Hooves'tan ayrı bütçe ve ayrı muhasebe. Board ve trend sıralaması ham hacimle değil, uygun ücret ve
+  doğrulanmış aktiviteyle yapılır.
 
 **Herd rank (sezonluk XP)**: Calf → Yearling → Bull → Herd Leader
 
@@ -315,7 +320,7 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
    simülasyonlar, saldırı testleri ve gerekli hukuki inceleme tamamlandıktan sonra.
 5. **Gelir ve yönetişim:** Protokol gelirini gerçek hacimle ölçmek, operasyon bütçesini doğrulamak; ürünün
    sürdürülebilirliği kanıtlandıktan sonra $HERD ve Herd Vault.
-   - Rekt Mining (sezon puanları) burada, $HERD ile birlikte: ekonomik model ve farm simülasyonu v0.1 hazır
+   - Rekt Mining (sezon puanları) burada, $HERD ile birlikte: ✅ v0.1 ekonomi politikası ve farm simülasyonu
      ([`REKT_MINING.md`](REKT_MINING.md)); parametreler gerçek kullanıcı verisiyle güncellenecek.
 
 **Deneyler (uygulanmış özellik değil):**
@@ -334,7 +339,7 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 - Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$ (GIWA seçilirse kişi başı tavan)
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı
 - Operasyon tabanının aylık tutarı
-- Rekt Mining: $\alpha$'nın kaynağı (Herd Vault payı mı, ayrı kalem mi), puanların $HERD'e dönüşüm takvimi, MEV/sandwich koruması
+- Rekt Mining: operasyon tabanı tutarı, kontrollü alımın likidite eşiği, ödül $HERD'üne vesting, MEV/sandwich koruması
 - Diamond Hooves parametreleri: tutma süresi (7 gün), bütçe oranı (1/50), ölü token eşiği (30 gün), "zararına" tanımı (ortalama alış fiyatı)
 - Trample koşullarının kesin listesi (yalnızca zincir üstünde kanıtlanabilir olanlar)
 - Rekt-back v1 snapshot penceresi (24 saat önerisi) ve itiraz süresi

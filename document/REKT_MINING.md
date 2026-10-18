@@ -1,4 +1,4 @@
-# Rekt Mining — Ekonomik Model ve Farm Simülasyonu (v0.1, taslak)
+# Rekt Mining — Ekonomik Model ve Farm Simülasyonu (v0.1)
 
 > "Kaybetsen bile bir şey kazanırsın" psikolojisini (Papertrade, EOS betting mining), kayba göre sınırsız token
 > basmadan HerdCall'a taşıyan sezonluk puan sisteminin ekonomik tanımı.
@@ -16,6 +16,8 @@ kullanıcıların ödül payını ne kadar azaltıyor?
 - Bütçe yalnızca token adediyle sabitlenirse ($B_t$), $HERD fiyatı yükseldikçe farm kârlı hâle gelir. Örnek:
   havuz değeri dürüst ücretlerin 2 katına çıkınca dürüst kullanıcılar ödülün yalnızca %63'ünü alır (§5.3).
 - Kayba bağlı çarpan **tutma şartı olmadan** farmcıya bedavadır: her al-sat turu zararla kapanır (§5.1).
+- **v0.1 ekonomi politikası kabul edildi (§7):** havuz SOL cinsinden ve gelirle sınırlı, puanlar göreli, $HERD sezon
+  sonunda gelirle kontrollü alınır, yeni token basılmaz. Bu politikayla $HERD fiyatı farm ekonomisini değiştirmez (§5.7).
 
 ---
 
@@ -50,11 +52,12 @@ kullanıcıların ödül payını ne kadar azaltıyor?
 - **Puan tabanı yalnızca protokol payıdır, ücretin tamamı değil.** Creator payı (%0,30) ve arayüz payı (%0,10)
   farmcının kendi cüzdanlarına dönebilir. Taban tüm ücret olsaydı en ucuz farmcının birim maliyeti
   1,33'ten 0,60'a düşerdi ve §4'teki marj neredeyse kapanırdı.
-- **Havuz değeri sınırlı (önerilen):** $V_t = \min(B_t \cdot P_{HERD},\ \alpha \cdot R_t)$. $R_t$, sezonda
-  toplanan protokol geliridir (farmcının ödedikleri dahil). $B_t$ token adedi olarak tavan olmaya devam eder;
-  değeri $\alpha R_t$'yi aşan kısım dağıtılmaz. Havuzun $HERD öncesi puanlardan oluştuğu dönemde de
-  puanların dönüşeceği değer bu sınırla ilan edilir.
-- **Reddedilen: sabit token bütçesi** $V_t = B_t \cdot P_{HERD}$. Enflasyonu sınırlar ama farmı sınırlamaz (§5.3).
+- **Havuz değeri gelirle sınırlı ve SOL cinsinden (v0.1 politikası, §7):**
+  $V_t = \min\left(\alpha R_t,\ R_t - R_t/50 - O_t\right)$. $R_t$, sezonda tahsil edilen protokol geliridir
+  (farmcının ödedikleri dahil), $R_t/50$ Diamond Hooves bütçesi, $O_t$ operasyon tabanıdır. Havuz önce SOL olarak
+  birikir; $HERD sezon kapandıktan sonra bu SOL ile piyasadan alınır. Token adedi $V_t / P_{HERD}$'dir, yani
+  fiyat yalnızca kaç token dağıtılacağını belirler, havuzun değerini değil.
+- **Reddedilen: sabit token bütçesi** $V_t = B_t \cdot P_{HERD}$. Enflasyonu sınırlar ama farmı sınırlamaz (§5.3, §5.7).
 
 ## 3. Çarpanlar
 
@@ -171,6 +174,57 @@ kullanıcının ödülünün ne kadarı kalır.
 - Bu yüzden "2x zarar çarpanı" sorusu yerine karar verilecek değerler $M$ ve $\alpha$'dır. $M = 2$ ve
   $m_r = 1{,}5$ ile uzun süre tutup zarar eden kullanıcı ortalamanın 1,56 katı ödül alır.
 
+### 5.6 v0.1 politikası: sezon geliri seviyeleri
+
+$\alpha = 0{,}25$, örnek operasyon tabanı $O_t = 100$ SOL / sezon, en kötü durum farmcısı.
+
+| Dürüst hacim (SOL) | Protokol geliri $H$ | Havuz (SOL) | Havuz / gelir | En iyi farm kârı | $1\times H$ yakılırsa dürüste kalan |
+|---|---|---|---|---|---|
+| 10.000 | 45 | 0 | %0 | 0 | — |
+| 50.000 | 225 | 56,2 | %25 | 0 | %75 |
+| 100.000 | 450 | 112,5 | %25 | 0 | %75 |
+| 1.000.000 | 4.500 | 1.125 | %25 | 0 | %75 |
+| 10.000.000 | 45.000 | 11.250 | %25 | 0 | %75 |
+
+- Koşul ölçekten bağımsızdır: her gelir seviyesinde farm kâr etmez.
+- Gelir operasyon tabanını karşılamıyorsa o sezon havuz yoktur. Taban dolarken havuz, yakılan her ücretle
+  $\alpha$'dan hızlı büyüyebilir, ama $V_t \le \alpha R_t$ her zaman geçerli olduğu için koşul bozulmaz (test R10).
+
+### 5.7 $HERD fiyat senaryoları ($H = 450$ SOL)
+
+Sabit token bütçesi, 1x fiyatta politikadaki havuzla aynı değere gelecek şekilde seçildi.
+
+| $HERD fiyatı | Sabit $B_t$: havuz değeri | Sabit: farm kârı | Sabit: dürüste kalan | Politika: havuz | Politika: farm kârı | Politika: alınan $HERD (M) |
+|---|---|---|---|---|---|---|
+| 0,1x | 11 | 0 | %100 | 112,5 | 0 | 11,23 |
+| 0,5x | 56 | 0 | %100 | 112,5 | 0 | 2,25 |
+| 1x | 113 | 0 | %100 | 112,5 | 0 | 1,12 |
+| 2x | 225 | 0 | %100 | 112,5 | 0 | 0,56 |
+| 5x | 563 | 27 | %79 | 112,5 | 0 | 0,22 |
+| 10x | 1.125 | 221 | %56 | 112,5 | 0 | 0,11 |
+
+- Sabit bütçede fiyat 5 katına çıkınca farm kârlı olur ve dürüst pay düşer. Politikada havuz değeri fiyattan
+  bağımsızdır; fiyat yalnızca dağıtılan token adedini değiştirir.
+
+### 5.8 Kontrollü alımın fiyat etkisi
+
+Sabit çarpımlı $HERD/SOL havuzu; parçalar arasında arbitrajın fiyatı geri getirdiği varsayılır. Tablo, alım
+fiyatının başlangıç fiyatına göre ne kadar yüksek ödendiğini gösterir. Bu fark aynı zamanda alımın önüne
+geçen (front-run) birinin en fazla yakalayabileceği alandır.
+
+| Havuz / $HERD likiditesi | Tek alım | 7 parça | 28 parça (günde 4, 7 gün) | Parça başı ≤ %0,5 için gereken parça |
+|---|---|---|---|---|
+| 0,01 | %1,00 | %0,14 | %0,04 | 2 |
+| 0,05 | %5,00 | %0,71 | %0,18 | 10 |
+| 0,10 | %10,00 | %1,43 | %0,36 | 20 |
+| 0,50 | %50,00 | %7,14 | %1,79 | 100 |
+| 1,00 | %100,00 | %14,29 | %3,57 | 200 |
+
+- Parça başı etki = parça / likidite. Kural: parça başı etki en fazla %0,5; parça sayısı buna göre seçilir,
+  zamanlar önceden ilan edilmez.
+- Havuz likiditeye göre büyükse (oran 0,5 ve üstü) alım haftalara yayılmalı ya da bir kısmı sonraki sezona
+  devretmeli. Bu, $HERD likiditesi bilinmeden kesinleştirilemez.
+
 ## 6. Bilinen sınırlar
 
 - **Ödül dışı faydalar:** Koşul, farmcının yalnızca ödülden kazandığını varsayar. Hacimle trend olmak, Board'da
@@ -181,24 +235,74 @@ kullanıcının ödülünün ne kadarı kalır.
 - **Dürüst karışım varsayımdır:** $\bar m$ ve $e_H$ gerçek veriye bağlıdır. $e_H$ küçükse (az kişi uzun tutup
   zararla çıkıyorsa) Diamond Hooves terimi büyür: $e_H = 0{,}05$ için $1/0{,}05/50 = 0{,}4$. $\bar m = 1$ alınsa
   bile marj öneri parametreleriyle pozitif kalır ($1{,}33 - 0{,}25 \cdot 2 - 0{,}4 = 0{,}43$).
-- **Satış baskısı:** Sınırlı havuz, sezon başına dağıtılan değeri $\alpha R_t$ ile sınırlar. Havuz protokol
-  geliriyle piyasadan alınan $HERD'le (Herd Vault buyback) fonlanırsa yeni emisyon olmaz. Basılan token'la
-  fonlanırsa sezon başına satış baskısı en fazla $\alpha R_t$ değerindedir. $HERD'ün likiditesi ve fiyatı
-  bu modelin dışındadır.
+- **Satış baskısı:** v0.1'de $HERD piyasadan alınır, yeni token basılmaz. Ödül alanlar satarsa satış baskısı en
+  fazla o sezon alınan miktar kadardır; alım baskısı ile satış baskısı aynı büyüklüktedir ama zamanlamaları
+  farklı olabilir. $HERD'ün
+  likiditesi ve fiyat davranışı bu modelin dışındadır.
+- **Alımın önüne geçme:** Havuzun büyüklüğü herkese açıktır. Alımı bilen biri önceden $HERD alıp alıma satabilir.
+  Kazancı en fazla alımın fiyat etkisi kadardır (§5.8); parça başı etki sınırı ve önceden ilan edilmeyen
+  zamanlama bunu küçük tutar.
+- **Bu sonuçların geçerlilik alanı:** "Hiçbir farm kâr etmez" sonucu §4'teki varsayımlar altında geçerlidir:
+  farmcının tek kazancı ödüldür, ücretler gerçekten tahsil edilir ve havuz $\alpha R_t$'yi aşmaz. Gerçek sistemde
+  wash trading, çoklu hesaplar, MEV, fiyat oynaklığı ve alımın piyasa etkisi ayrıca test edilmelidir. Bu
+  modelde çoklu hesap (S2, S3), sandwich (S4) ve alım etkisi (§5.8) ölçüldü; zincir üstü davranış ve
+  gerçek likidite ölçülmedi.
+- **Trend ve sıralama:** Board, trend ya da leaderboard ham hacme göre görünürlük veya ödül verirse, Rekt
+  Mining'den bağımsız olarak manipülasyon teşviki yaratır. v0.1'de sıralama uygun protokol ücreti ve
+  doğrulanmış aktiviteyle yapılır (§7).
 - **Sermaye ve fiyat riski:** S3'te fiyat riski ortalamada sıfıra yakındır ama sapması büyüktür (5 SOL'lük
   bacaklarda ±1,4 SOL). Riskten kaçınan farmcı için gerçek maliyet tablodakinden yüksektir; model bunu
   farmcı lehine yok sayar.
 
-## 7. v0.1 önerisi
+## 7. v0.1 ekonomi politikası (karar)
 
-| Parametre | Değer | Gerekçe |
+| Parametre | Karar | Dayanak |
 |---|---|---|
-| Puan tabanı | Protokol ücreti (%0,45) | Creator / arayüz payı farmcıya dönebilir (§2) |
-| Havuz | $V_t = \min(B_t P,\ \alpha R_t)$, $\alpha = 0{,}25$ | En kötü durumda marj 0,82 (§5.4) |
-| Zarar çarpanı | 1,5x, yalnızca 7+ gün tutulan pozisyonlarda | Şartsız çarpan farmcıya bedava (§5.1) |
+| $\alpha$ | En fazla %25 | En kötü durumda marj 0,82 (§5.4) |
+| Gelir kaynağı | Ayrı Rekt Mining gelir payı (Herd Vault'tan ayrı) | §7.1 |
+| Puan tabanı | Yalnızca **tahsil edilmiş** %0,45 protokol ücreti | Creator / arayüz payı farmcıya dönebilir (§2) |
+| Zarar çarpanı | 1,5x; yalnızca 7+ gün tutulup zararla kapanan uygun pozisyonlarda | Şartsız çarpan farmcıya bedava (§5.1) |
 | Tutma çarpanı | 1,25x (7+ gün) | |
-| Üst sınır $M$ | 2 | Güvenliği belirleyen değer (§5.5) |
-| Diamond Hooves | Ayrı bütçe (gelir / 50), ayrı muhasebe, ücreti aşmaz | Koşulda ayrı terim (§4) |
+| Toplam çarpan tavanı | 2x | Güvenliği belirleyen değer (§5.5) |
+| Ödül zamanı | Sezon kapanışından sonra | §7.2 |
+| $HERD edinimi | Gelirle kontrollü alım; yeni token basımı yok | §5.7, §5.8 |
+| Diamond Hooves | Ayrı bütçe (gelir / 50) ve ayrı muhasebe; iade ödenen ücreti aşmaz | Koşulda ayrı terim (§4) |
+| Trend / leaderboard | Ham hacim yerine uygun ücret ve doğrulanmış aktivite | §6 |
+
+### 7.1 Protokol gelirinin sırası
+
+Protokol payı (%0,45) şu sırayla dağılır:
+
+1. **Diamond Hooves:** gelir / 50.
+2. **Operasyon tabanı** $O_t$ (RPC, indexer, audit, hukuk).
+3. **Rekt Mining payı:** $\min(\alpha R_t,\ \text{kalan})$, $\alpha \le 0{,}25$.
+4. Kalan: Herd Vault / Builders Fund / Operasyon (50 / 30 / 20).
+
+Rekt Mining payı tabandan sonra gelir; düşük gelirli sezonda operasyonu aç bırakmaz. Havuz $\alpha R_t$'den
+küçük olabilir ama büyük olamaz; güvenlik koşulu yalnızca üst sınıra dayanır.
+
+### 7.2 Sezon akışı
+
+1. **Sezon boyunca:** Uygun pozisyonlar puan biriktirir. Rekt Mining payı SOL olarak ayrı bir kasada birikir.
+   Puanlar göreli olduğu için sezon içinde kimseye sabit değer vaat edilmez.
+2. **Kapanış:** Sezonun son bloğu sabitlenir. Yalnızca tahsil edilmiş ücretler sayılır: başarısız işlemler,
+   iptal edilen Lobby'ler ve iadeler puan üretmez. Bir pozisyon kapandığı sezonda sayılır; kapanışta hâlâ açık
+   olan pozisyon, kapandığı sezona kalır.
+3. **Liste:** Puanlar zincir verisinden açık kaynaklı betikle hesaplanır, Merkle kökü zincire yazılır ve itiraz
+   süresi tanınır (Rekt-back v1 ile aynı yöntem). Creator cüzdanları ve kasalar hariçtir.
+4. **Kontrollü alım:** Kasadaki SOL ile $HERD, parça başı fiyat etkisi en fazla %0,5 olacak şekilde, önceden ilan
+   edilmeyen zamanlarda parça parça alınır (§5.8).
+5. **Claim:** Herkes payını Merkle kanıtıyla çeker (pull-claim). Alınmayan paylar sonraki sezona devreder.
+
+$HERD çıkmadan önceki sezonlarda 1–3. adımlar aynı işler; SOL kasada bekler ve alım $HERD lansmanından sonra
+aynı kurallarla yapılır.
+
+### 7.3 Trend ve leaderboard
+
+- Board ve trend sıralaması: tokenin **uygun protokol ücreti** (tahsil edilmiş) ve doğrulanmış aktivite
+  (benzersiz holder, Stampede katılımı, 7+ gün tutan cüzdan sayısı). Ham hacim sıralamada kullanılmaz.
+- Kullanıcı leaderboard'u: sezon puanı (yukarıdaki kurallarla) ve Herd Caller / Herd rank (itibar, ayrı).
+- Tek başına ham hacim hiçbir yerde ödül veya görünürlük kazandırmaz.
 
 ## 8. Değişmezler ve testler
 
@@ -213,11 +317,16 @@ kullanıcının ödülünün ne kadarı kalır.
 | R7 | Sabit havuzda kapalı formül ve ızgara araması aynı sonucu verir | `fixed pool` |
 | R8 | Dağıtılan ödül havuzu aşmaz; Diamond Hooves ödenen ücreti aşmaz | `separate accounting` |
 | R9 | Sandwich ödülsüz de kârlıdır (MEV ayrı sorun) | `sandwich pays without any reward` |
+| R10 | Politika havuzu Diamond Hooves ve operasyon tabanını önce karşılar, $\alpha R_t$'yi asla aşmaz | `policy pool: funds Diamond Hooves ...` |
+| R11 | Politika havuzunda marj ≥ 0 iken her gelir seviyesi ve operasyon tabanında farm kâr etmez | `policy pool: with the margin holding ...` |
+| R12 | Kontrollü alımda parça başı fiyat etkisi parça / likiditedir | `buyback` |
 
 ## 9. Açık sorular
 
-- $\alpha$'nın kaynağı: Herd Vault payından mı (§7, 50/30/20), yoksa ayrı bir kalem mi?
-- Puanların $HERD'e dönüşüm takvimi ve vesting'i.
+- Operasyon tabanı $O_t$'nin tutarı ve sezon süresi.
+- Kontrollü alımın yapılacağı havuz ve likidite eşiği; havuz likiditeye göre büyükse devretme kuralı (§5.8).
 - Gerçek dürüst karışım ($\bar m$, $e_H$): Paper Season / test ağı verisiyle ölçülecek.
 - Sandwich / MEV koruması için ayrı şartname.
 - Referral payı puan tabanına girer mi? (Girerse arayüz payı gibi farmcıya dönebilir; $c_F$ düşer.)
+- Claim süresi (öneri: alınmayan paylar sonraki sezona devreder).
+- Ödül $HERD'üne vesting uygulanır mı? (Satış baskısını azaltır, ödülün çekiciliğini düşürür.)

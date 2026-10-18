@@ -212,6 +212,29 @@ export function strategyMultiplier(positions, design) {
   return b === 0 ? 0 : w / b;
 }
 
+// ---------------------------------------------------------------- v0.1 policy (document/REKT_MINING.md §7)
+
+export const POLICY = Object.freeze({ alpha: 0.25, dhDivisor: 50, mRekt: 1.5, mHold: 1.25, gate: true, gateDays: 7, cap: 2 });
+
+// Season pool in native, from the season's collected protocol revenue. Diamond Hooves and the operations floor
+// are funded first; the pool is never above alpha × revenue, so the §4 safety condition still applies.
+export function policyPool(revenue, { alpha = POLICY.alpha, opsFloor = 0, dhDivisor = POLICY.dhDivisor } = {}) {
+  const afterFixed = Math.max(0, revenue - revenue / dhDivisor - opsFloor);
+  return Math.min(alpha * revenue, afterFixed);
+}
+
+// Controlled $HERD purchase with the season pool on a constant-product HERD/native pool.
+//   liquidity  native side of the pool, price  native per $HERD before the purchase
+//   chunks     equal purchases; arbitrage is assumed to restore the price between chunks
+// Returns tokens bought and the premium paid over the starting price.
+export function buyback({ value, liquidity, price, chunks = 1 }) {
+  const chunk = value / chunks;
+  const tokenSide = liquidity / price;
+  const perChunk = (tokenSide * chunk) / (liquidity + chunk); // x·y = k, native in, tokens out
+  const tokens = perChunk * chunks;
+  return { tokens, avgPrice: value / tokens, premium: value / tokens / price - 1 };
+}
+
 // ---------------------------------------------------------------- season layer
 //
 // Units: native, measured as protocol fee (reward basis).
@@ -223,10 +246,14 @@ export function strategyMultiplier(positions, design) {
 //           'capped': value = min(budgetValue, alpha × season protocol revenue)
 //   dh      Diamond Hooves: budget = revenue / 50, shared pro-rata over eligible basis.
 //           ellH = honest eligible share of basis; farmerEligible = farmer's eligible share.
+//   'policy': the v0.1 policy pool (policyPool below), denominated in native.
 export function seasonPayoff(x, p) {
-  const { H, mBar, mF, cF, pool = 'capped', alpha = 0.25, budgetValue = Infinity, dh = null } = p;
+  const { H, mBar, mF, cF, pool = 'capped', alpha = 0.25, budgetValue = Infinity, opsFloor = 0, dh = null } = p;
   const revenue = H + x;
-  const value = pool === 'fixed' ? budgetValue : Math.min(budgetValue, alpha * revenue);
+  let value;
+  if (pool === 'fixed') value = budgetValue;
+  else if (pool === 'policy') value = policyPool(revenue, { alpha, opsFloor });
+  else value = Math.min(budgetValue, alpha * revenue);
   const honestPts = mBar * H;
   const farmPts = mF * x;
   const farmReward = honestPts + farmPts === 0 ? 0 : (value * farmPts) / (honestPts + farmPts);

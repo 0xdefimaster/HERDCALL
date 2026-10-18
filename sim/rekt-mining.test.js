@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import { NATIVE } from './stampede.js';
 import {
   HONEST_MIX,
+  POLICY,
   bestFarm,
+  buyback,
   cappedSafetyMargin,
   fixedPoolOptimum,
   freshCurve,
@@ -12,6 +14,7 @@ import {
   honestMultiplier,
   multiplier,
   pairTrip,
+  policyPool,
   rng,
   roundTrip,
   sandwich,
@@ -140,4 +143,37 @@ test('sandwich pays without any reward: MEV is a separate problem from Rekt Mini
 test('honest mix sums to 1', () => {
   const total = Object.values(HONEST_MIX).reduce((a, b) => a + b, 0);
   assert.ok(Math.abs(total - 1) < 1e-12);
+});
+
+test('policy pool: funds Diamond Hooves and the ops floor first, never above alpha × revenue', () => {
+  const next = rng(7);
+  for (let i = 0; i < 2000; i += 1) {
+    const revenue = next() * 10_000;
+    const opsFloor = next() * 2000;
+    const alpha = next() * POLICY.alpha;
+    const pool = policyPool(revenue, { alpha, opsFloor });
+    assert.ok(pool >= 0);
+    assert.ok(pool <= alpha * revenue + 1e-9);
+    assert.ok(pool + revenue / POLICY.dhDivisor + opsFloor <= revenue + 1e-9 || pool === 0);
+  }
+});
+
+test('policy pool: with the margin holding, no farm pays at any revenue level or ops floor', () => {
+  const next = rng(8);
+  let checked = 0;
+  for (let i = 0; i < 3000 && checked < 200; i += 1) {
+    const p = { pool: 'policy', ...randomSeason(next), alpha: next() * POLICY.alpha, opsFloor: next() * 2000 };
+    if (cappedSafetyMargin(p) < 0) continue;
+    checked += 1;
+    assert.ok(bestFarm(p, { steps: 600 }).profit <= 1e-9 * p.H);
+  }
+  assert.equal(checked, 200);
+});
+
+test('buyback: premium per chunk is chunk / liquidity on a constant-product pool', () => {
+  for (const [value, liquidity, chunks] of [[100, 1000, 1], [100, 1000, 20], [500, 20_000, 7]]) {
+    const r = buyback({ value, liquidity, price: 0.01, chunks });
+    assert.ok(Math.abs(r.premium - value / chunks / liquidity) < 1e-9);
+  }
+  assert.ok(buyback({ value: 100, liquidity: 1000, price: 1, chunks: 10 }).tokens > buyback({ value: 100, liquidity: 1000, price: 1 }).tokens);
 });
