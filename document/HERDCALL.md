@@ -12,6 +12,8 @@ Tasarım kanvası (landing + uygulama ekranları): https://claude.ai/artifact/SW
 
 **Elimizde olanlar**
 - Bu doküman: ürün mekanikleri, ücret modeli, gelir dağıtımı, marka.
+- [`STAMPEDE_SPEC.md`](STAMPEDE_SPEC.md): Lobby → Stampede açılışının teknik şartnamesi (formüller, durum makinesi,
+  invariant'lar) ve [`sim/`](../sim) altında referans model + otomatik testler (`npm run test:sim`, `npm run sim`).
 - Tasarım kanvası: Landing, Lobby (çalışan geri sayım), Token sayfası (Fair Score),
   Token oluşturma (Bellwether anahtarı), Rekt-back profili, Community Takeover oylaması.
 - React / Vite arayüzü (`src/`): kanvastaki 6 ekran, piksel tema, mock veri ve
@@ -26,7 +28,9 @@ Tasarım kanvası (landing + uygulama ekranları): https://claude.ai/artifact/SW
 - Bonded Creator (Bellwether) (isteğe bağlı bond + vesting), Fair Score, Rekt-back, Herd rank.
 - Protokol gelirinin 50 / 30 / 20 dağılımı ve token'ın gelirden **sonra** çıkması.
 - **CTO kuralı** (bkz. §6).
-- **Diamond Hooves**: uzun süre tutup zararına satanlara ödedikleri işlem ücretinden pay iadesi; bütçe protokol gelirinin 1/50'si, çekiliş yok (bkz. §9).
+- **İlk sürüm (v1) kapsamı:** Lobby/Stampede, bonding curve, breakout ve temel creator taahhütleri (§13).
+- **Sonraki aşamalar:** Diamond Hooves (uzun süre tutup zararına satanlara ücret iadesi; bütçe protokol gelirinin 1/50'si,
+  çekiliş yok, bkz. §9) ve Rekt-back v1 aşama 4'te; zarar bazlı Rekt-back v2 ekonomik simülasyon + hukuki inceleme sonrası.
 
 **Önerilen, kesinleşmeyi bekleyen**
 - Creator / arayüz / Rekt-back / protokol oranları (§5).
@@ -65,6 +69,14 @@ Hedef "güvenli" değil, **adil** bir oyun: kaybedebilirsin ama hilesiz kaybeder
 
 ## 4. Bonded Creator (Bellwether) (ödül, ceza değil)
 
+> **Tasarım ilkesi (v1):** Cezalandırmak yerine ihlali baştan imkânsız kılmak. Creator'ın **taahhüt ettiği token
+> tahsisatı** bir vesting kasasında (vault) kilitlenir ve takvime göre serbest bırakılır. Creator'ın cüzdanlarının
+> tamamı dondurulmaz: bu, o cüzdanlardaki başka varlıkları etkiler ve entegrasyonları bozabilir. Solana seçilirse
+> Token-2022 Transfer Hook kullanımı her transferde ek program mantığı çalıştırır ve gerekli hesapları sağlayamayan
+> cüzdan/uygulamalarda transfer başarısız olur; bu yüzden v1'de varsayılan çözüm kasadır, hook ayrıca test edilir.
+> Teminat yalnızca **zincir üstünde kanıtlanabilen** koşullarda kesilir. Cüzdan analizi (Fair Score kümeleri)
+> uyarı üretir ama tek başına teminat kesintisine sebep olmaz.
+
 Damgalanmak **isteğe bağlıdır**. Damgasız token da açılabilir ama açıkça etiketlenir.
 
 | | Bonded | Unbonded |
@@ -77,8 +89,10 @@ Damgalanmak **isteğe bağlıdır**. Damgasız token da açılabilir ama açık�
 | Rozet | 🔔 Bellwether | Yok |
 
 - Teminat **breakout'ta** deve iade edilir.
-- Dev vesting bitmeden satarsa **trampled** olur: teminat **ve escrow'daki birikmiş creator geliri**
-  slash edilip Rekt-back havuzuna / holder'lara gider.
+- Kasadaki tahsisat vesting bitmeden çekilemez; bu kontrat seviyesinde engellenir.
+- **Trample** (teminat ve escrow'daki creator gelirinin kesilmesi) yalnızca açıkça listelenmiş, zincir üstünde
+  kanıtlanabilir koşullarda olur. Kesin liste ayrı şartnamede tanımlanacak; muğlak ya da cüzdan analizine dayalı
+  koşul içermeyecek. Kesilen tutar Rekt-back v1 kurallarına göre holder'lara dağıtılır (§9).
 - Escrow zamanla büyüyen ikinci bir teminat gibi çalışır: dev ne kadar başarılıysa,
   dump etmenin bedeli o kadar artar.
 - Creator geliri en fazla **10 cüzdana** bölünebilir (ekip, sanatçı, KOL); hepsi token sayfasında görünür.
@@ -97,6 +111,8 @@ ve on-chain herkese açıktır.
 - **Arayüz / referans payı**: işlemi getiren terminal, Telegram botu ya da referans linki alır
   (Zora ve Clanker'daki model). Terminallerin entegre olması için ekonomik sebep.
 - Unbonded token'lar havuza daha çok öder, çünkü herd daha çok risk taşır.
+- v1'de Rekt-back ücret payı ayrı bir havuzda birikir; bu havuzun dağıtım kuralları v2 ile birlikte tanımlanacak.
+  v1'de holder'lara yalnızca trample'da kesilen teminat ve escrow dağıtılır (§9).
 
 ## 6. ⭐ CTO kuralı (Community Takeover)
 
@@ -165,12 +181,22 @@ Holder tablosunda küme üyeleri etiketlenir ("Cluster A" gibi).
 
 ## 9. Rekt-back ve Herd rank
 
-**Rekt-back havuzu**:
-- Ücretlerden, trampled bond'lardan ve slash edilen creator escrow'larından beslenir.
-- Trampled dev ya da tespit edilen bağlantılı-cüzdan dump'larında holder'lara **orantılı** ödeme yapar.
-- Ödemeler havuz bakiyesiyle **sınırlıdır**, sınırsız garanti verilmez.
+**Rekt-back v1 (ilk sürüm): zarar hesabı yok.**
+- Bir creator trample olduğunda kesilen teminat ve escrow, o token'ın **uygun holder'larına token bakiyeleriyle
+  orantılı** dağıtılır. Maliyet, kısmi satış ya da gerçekleşmiş zarar hesaplanmaz.
+- Şartnamede tanımlanacak noktalar (öneri):
+  - **Snapshot zamanı:** trample'ı tetikleyen işlemin bloğu.
+  - **Uygunluk:** Trample'dan hemen önce alıp dağıtımdan pay kapmayı önlemek için, bakiye olarak geriye dönük bir
+    pencerede (örneğin 24 saat) tutulan **en düşük bakiye** esas alınır. Creator'ın beyan ettiği cüzdanlar ve kasa hariçtir.
+  - **Liste:** Zincir verisinden açık kaynaklı, tekrarlanabilir bir betikle hesaplanır, Merkle kökü zincire yazılır ve
+    itiraz süresi tanınır. Herkes aynı veriden listeyi yeniden üretip doğrulayabilir.
+  - **Dağıtım:** Pull-claim; her holder kendi payını Merkle kanıtıyla talep eder. Tek işlemde toplu gönderim yok.
+- Ödemeler kesilen tutarla **sınırlıdır**, sınırsız garanti verilmez; "iade/sigorta" denmez.
 
-### ⭐ Diamond Hooves: uzun süre tutanlara ücret iadesi (çekiliş yok)
+**Rekt-back v2 (ertelendi):** Ücretlerden beslenen genel havuz ve zarar bazlı telafi (maliyet, kısmi satış ve
+transfer muhasebesi gerektirir). Ekonomik simülasyon ve hukuki inceleme sonrası değerlendirilecek.
+
+### ⭐ Diamond Hooves: uzun süre tutanlara ücret iadesi (çekiliş yok) — aşama 4
 
 Amaç, kısa vadeli al-sat yapanı değil, **zararı uzun süre taşıyanı** ödüllendirmek. İlk tasarımdaki rastgele
 çekiliş (Lucky Hoof) **kaldırıldı**: rastgele para ödülü birçok ülkede şans oyunu/çekiliş mevzuatına girebiliyordu
@@ -256,25 +282,41 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 
 ## 13. Yol haritası
 
-1. **Ekonomi simülasyonu**: farklı hacimlerde ücret dağılımı, Rekt-back havuzu yeterliliği, operasyon tabanı.
-2. **Anchor programı v0**: launch + Lobby / Stampede + bonding curve + fee router (devnet).
-3. **Bonded Creator katmanı**: bond, vesting, creator escrow, trample.
-4. **Breakout**: DEX migration + LP kilidi + yetki iptali.
-5. **Arayüz**: mevcut React uygulamasını HerdCall tasarımına çevirmek (yapıldı: mock veri + Phantom bağlantısı); gerçek on-chain çağrılar ve wallet-adapter.
-   (Tasarım kanvasındaki ücret çubukları eski 0.5 / 0.3 / 0.2 dağılımını gösteriyor, güncellenecek.)
-6. **Fair Score indexer**: cluster analizi, dev geçmişi.
-7. **CTO modülü + Rekt-back talepleri.**
-8. **Audit → mainnet** (dar bir nişle başlangıç).
-9. **$HERD + Herd Vault oylaması** (gelir kanıtlandıktan sonra).
+Özellikler birbirine bağımlılıklarına göre sıralanır. Bir aşama, başarı kriteri sağlanmadan sonrakine geçilmez.
+
+1. **Çekirdek launch protokolü (ilk öncelik):** Lobby, Stampede fiyatlandırması, tahsis, iade, bonding curve,
+   breakout. Başarı kriteri yalnızca kontratın çalışması değil; [`STAMPEDE_SPEC.md`](STAMPEDE_SPEC.md)'deki
+   invariant'ların saldırı ve sınır durumlarında korunması.
+   - ✅ Şartname v0.1 + referans model + otomatik testler.
+   - ⏳ **Lobby kapasitesi kararı** (STAMPEDE_SPEC §9): kontrat yazılmadan önce.
+   - ⏳ Zincir seçimi; ardından test ağında kontrat ve aynı invariant testleri.
+2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
+   açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda.
+3. **Şeffaflık ve keşif deneyimi:** Gerçek token verileri, işlem geçmişi, creator geçmişi, token yetkileri ve
+   açıklanabilir Fair Score. Arayüz (Board, token sayfası) mevcut tasarımla gerçek verilere bağlanır.
+4. **Topluluk ve telafi sistemleri:** Community Takeover, Rekt-back v1, Diamond Hooves, ardından Rekt-back v2. Ekonomik
+   simülasyonlar, saldırı testleri ve gerekli hukuki inceleme tamamlandıktan sonra.
+5. **Gelir ve yönetişim:** Protokol gelirini gerçek hacimle ölçmek, operasyon bütçesini doğrulamak; ürünün
+   sürdürülebilirliği kanıtlandıktan sonra $HERD ve Herd Vault.
+
+**Deneyler (uygulanmış özellik değil):**
+- Curve açılışında zamanla azalan anti-snipe ücreti: normal kullanıcıları da etkileyebilir ve botun ücreti
+  ödemesini engellemez. Lobby kapasitesi seçenekleriyle karşılaştırmalı simülasyon sonrası değerlendirilecek.
+
+**Notlar:**
+- Arayüzdeki Diamond Hooves kartı "Planned" etiketiyle konsept önizlemesi olarak gösteriliyor.
+- Eski PyrePad EVM kontratları (`contract/`) çekirdek kontratlar yazılınca kaldırılacak.
 
 ## 14. Açık sorular
 
+- **Lobby kapasitesi:** $S_L$ büyüklüğü, curve parametreleri ya da dinamik $S_L$ (STAMPEDE_SPEC §9). En öncelikli karar.
 - Breakout eşiği ve bonding curve parametreleri
 - Create fee miktarı
 - Stampede cap'i (tek cüzdanın ya da toplamın üst sınırı)
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı
 - Operasyon tabanının aylık tutarı
 - Diamond Hooves parametreleri: tutma süresi (7 gün), bütçe oranı (1/50), ölü token eşiği (30 gün), "zararına" tanımı (ortalama alış fiyatı)
-- Rekt-back'te "bağlantılı cüzdan dump'ı" tespitinin on-chain mi off-chain mi yapılacağı
+- Trample koşullarının kesin listesi (yalnızca zincir üstünde kanıtlanabilir olanlar)
+- Rekt-back v1 snapshot penceresi (24 saat önerisi) ve itiraz süresi
 - Hukuki yapı (kumar / menkul kıymet riski, şirketin kurulacağı ülke)
 - Protokol token adı (`$HERD` şimdilik çalışma adı)
