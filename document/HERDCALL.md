@@ -241,13 +241,19 @@ Papertrade / EOS betting mining psikolojisi, kayba göre sınırsız token basma
 
 - Sezon puanı = ödenen **protokol ücreti** × çarpan. Zarar çarpanı (1,5x) yalnızca **7+ gün** tutulup zararla
   kapanan pozisyonlarda; tutma çarpanı 1,25x; toplam çarpan en fazla 2x.
-- Havuz **SOL cinsinden** ve sezon protokol gelirinin en fazla %25'i ($\alpha \le 0{,}25$); ayrı bir Rekt Mining
-  gelir payı. Bu koşulla hiçbir farm büyüklüğü kâr etmez (ispat ve test şartnamede). Sabit token bütçesi reddedildi:
-  $HERD fiyatı yükselince farm kârlı olur.
+- Yeni ödül tahsisi **SOL cinsinden** ve sezonun uygun net protokol gelirinin en fazla %25'i ($\alpha \le 0{,}25$); ayrı
+  bir Rekt Mining gelir payı. Model varsayımları altında, test edilen senaryolarda ödül kaynaklı net farm kârı
+  sıfır veya negatiftir (ispat, test ve sınırları şartnamede). Sabit token bütçesi reddedildi: $HERD fiyatı yükselince
+  farm kârlı olur.
+- Pozisyon kapandığı sezonda bir kez puanlanır; 7 gün sayacı açılıştan başlar ve sezon değişiminde sıfırlanmaz.
 - Ödül sezon kapanışından sonra dağıtılır: Merkle listesi, itiraz süresi, ardından $HERD gelirle **kontrollü alınır**
-  (yeni token basılmaz) ve pull-claim ile çekilir.
+  (yeni token basılmaz; işlem başına en fazla %0,5 fiyat etkisi, aşılırsa alım durur) ve claim süresi içinde
+  pull-claim ile çekilir.
+- Yeni tahsis, harcanmayan SOL ve talep edilmemiş $HERD ayrı bakiyelerdir; devreden hiçbir bakiye bir sezonun
+  %25 tavanını aşmasına yol açmaz.
 - Diamond Hooves'tan ayrı bütçe ve ayrı muhasebe. Board ve trend sıralaması ham hacimle değil, uygun ücret ve
   doğrulanmış aktiviteyle yapılır.
+- Ekonomik güvenlik iddiaları, gerçek likidite ve zincir üstü verilerle doğrulanana kadar model varsayımıdır.
 
 **Herd rank (sezonluk XP)**: Calf → Yearling → Bull → Herd Leader
 
@@ -339,7 +345,7 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 - Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$ (GIWA seçilirse kişi başı tavan)
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı
 - Operasyon tabanının aylık tutarı
-- Rekt Mining: operasyon tabanı tutarı, kontrollü alımın likidite eşiği, ödül $HERD'üne vesting, MEV/sandwich koruması
+- Rekt Mining: operasyon tabanı tutarı, claim süresi ve alım penceresi, alım havuzunun derinliği ve kayma toleransı, ödül $HERD'üne vesting, MEV/sandwich koruması
 - Diamond Hooves parametreleri: tutma süresi (7 gün), bütçe oranı (1/50), ölü token eşiği (30 gün), "zararına" tanımı (ortalama alış fiyatı)
 - Trample koşullarının kesin listesi (yalnızca zincir üstünde kanıtlanabilir olanlar)
 - Rekt-back v1 snapshot penceresi (24 saat önerisi) ve itiraz süresi

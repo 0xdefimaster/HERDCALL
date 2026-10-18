@@ -223,16 +223,248 @@ export function policyPool(revenue, { alpha = POLICY.alpha, opsFloor = 0, dhDivi
   return Math.min(alpha * revenue, afterFixed);
 }
 
-// Controlled $HERD purchase with the season pool on a constant-product HERD/native pool.
-//   liquidity  native side of the pool, price  native per $HERD before the purchase
-//   chunks     equal purchases; arbitrage is assumed to restore the price between chunks
-// Returns tokens bought and the premium paid over the starting price.
-export function buyback({ value, liquidity, price, chunks = 1 }) {
-  const chunk = value / chunks;
-  const tokenSide = liquidity / price;
-  const perChunk = (tokenSide * chunk) / (liquidity + chunk); // x·y = k, native in, tokens out
-  const tokens = perChunk * chunks;
-  return { tokens, avgPrice: value / tokens, premium: value / tokens / price - 1 };
+// Eligible net revenue of a season: protocol fees actually collected in that season, minus reversals
+// (refunds, failed trades). Carried reserves, unspent SOL, unclaimed $HERD and $HERD price gains are not revenue.
+export function eligibleRevenue({ protocolFeesCollected, reversed = 0 }) {
+  return Math.max(0, protocolFeesCollected - reversed);
+}
+
+// Positions are scored once, in the season they close. The hold time runs from the open, across season boundaries.
+//   positions: [{ id, owner, openedAt, closedAt (null while open), basis, loss }], times in days
+export function scoreSeason(positions, { start, end, design = POLICY, scored = new Set() }) {
+  const byOwner = new Map();
+  let total = 0;
+  for (const p of positions) {
+    if (p.closedAt == null || p.closedAt < start || p.closedAt >= end || scored.has(p.id)) continue;
+    const pts = p.basis * multiplier({ heldDays: p.closedAt - p.openedAt, loss: p.loss }, design);
+    scored.add(p.id);
+    byOwner.set(p.owner, (byOwner.get(p.owner) ?? 0) + pts);
+    total += pts;
+  }
+  return { byOwner, total, scored };
+}
+
+// Rekt Mining treasury with three separate ledgers (document/REKT_MINING.md §7.4):
+//   allocation  new SOL for season t, at most alpha × eligible revenue of season t; fixed at close
+//   unspent SOL SOL of season t not yet spent on $HERD; bound to season t, never re-allocated
+//   claims      $HERD bought for season t (and SOL left at the purchase deadline), owed to season t's list
+// Expired unclaimed $HERD goes to a carry reserve. A later season may use it only inside its own cap, counted at
+// purchase cost; the SOL it replaces goes back to the protocol. So a season never distributes more than its cap.
+export class RektTreasury {
+  constructor({ alpha = POLICY.alpha, opsFloor = 0, claimWindow = 2 } = {}) {
+    Object.assign(this, { alpha, opsFloor, claimWindow });
+    this.seasons = new Map();
+    this.carry = { tokens: 0, cost: 0 };
+    this.released = 0; // SOL handed back to the protocol
+  }
+
+  close(t, { revenue, points }) {
+    if (this.seasons.has(t)) throw new Error('season already closed');
+    const allocation = policyPool(revenue, { alpha: this.alpha, opsFloor: this.opsFloor });
+    const useCost = Math.min(this.carry.cost, allocation);
+    const useTokens = this.carry.cost === 0 ? 0 : (this.carry.tokens * useCost) / this.carry.cost;
+    this.carry = { tokens: this.carry.tokens - useTokens, cost: this.carry.cost - useCost };
+    this.released += useCost;
+    const totalPts = [...points.values()].reduce((a, b) => a + b, 0);
+    const season = {
+      t, revenue, allocation, points, totalPts,
+      solToBuy: allocation - useCost, spent: 0, tokens: useTokens, tokenCost: useCost, carryUsed: useCost,
+      solOwed: 0, claimed: new Set(), paidTokens: 0, paidSol: 0, status: 'buying', deadline: null,
+    };
+    this.seasons.set(t, season);
+    return season;
+  }
+
+  get(t) {
+    const s = this.seasons.get(t);
+    if (!s) throw new Error('unknown season');
+    return s;
+  }
+
+  purchase(t, sol, tokens) {
+    const s = this.get(t);
+    if (s.status !== 'buying') throw new Error('not buying');
+    if (sol > s.solToBuy + 1e-9) throw new Error('above season budget');
+    s.solToBuy -= sol;
+    s.spent += sol;
+    s.tokens += tokens;
+    s.tokenCost += sol;
+  }
+
+  // Purchase deadline: SOL still unspent is owed to the same list in SOL. It is never moved to another season.
+  endPurchase(t, now) {
+    const s = this.get(t);
+    if (s.status !== 'buying') throw new Error('not buying');
+    s.solOwed = s.solToBuy;
+    s.solToBuy = 0;
+    s.status = 'claiming';
+    s.deadline = now + this.claimWindow;
+  }
+
+  claim(t, owner, now) {
+    const s = this.get(t);
+    if (s.status !== 'claiming') throw new Error('not claimable');
+    if (now >= s.deadline) throw new Error('claim window closed');
+    if (s.claimed.has(owner)) throw new Error('already claimed');
+    const pts = s.points.get(owner) ?? 0;
+    if (pts === 0 || s.totalPts === 0) throw new Error('nothing to claim');
+    s.claimed.add(owner);
+    const tokens = (s.tokens * pts) / s.totalPts;
+    const sol = (s.solOwed * pts) / s.totalPts;
+    s.paidTokens += tokens;
+    s.paidSol += sol;
+    return { tokens, sol };
+  }
+
+  // After the window: unclaimed $HERD to the carry reserve at its purchase cost, unclaimed SOL back to the protocol.
+  expire(t, now) {
+    const s = this.get(t);
+    if (s.status !== 'claiming' || now < s.deadline) throw new Error('window still open');
+    const leftTokens = s.tokens - s.paidTokens;
+    const leftCost = s.tokens === 0 ? 0 : (s.tokenCost * leftTokens) / s.tokens;
+    this.carry = { tokens: this.carry.tokens + leftTokens, cost: this.carry.cost + leftCost };
+    this.released += s.solOwed - s.paidSol;
+    s.status = 'expired';
+    return { tokens: leftTokens, cost: leftCost };
+  }
+
+  // Value a season distributes, at cost: carry used + SOL spent + SOL owed. Must equal its allocation.
+  distributedCost(t) {
+    const s = this.get(t);
+    return s.tokenCost + s.solOwed + s.solToBuy;
+  }
+}
+
+// ---------------------------------------------------------------- controlled $HERD purchase
+//
+// Constant-product HERD/SOL pool. Impact is the execution price over the pre-trade spot, excluding the pool fee.
+// Splitting a buy into chunks lowers each trade's impact; the total cost only falls if arbitrage brings the price
+// back between chunks (`rho`). With rho = 0 the chunks add up to the same price as one buy.
+export class HerdPool {
+  constructor({ sol, herd, feeBps = 25 }) {
+    Object.assign(this, { sol, herd, fee: feeBps / 10_000 });
+  }
+
+  clone() {
+    return new HerdPool({ sol: this.sol, herd: this.herd, feeBps: this.fee * 10_000 });
+  }
+
+  spot() {
+    return this.sol / this.herd;
+  }
+
+  quoteBuy(solIn) {
+    const net = solIn * (1 - this.fee);
+    return (this.herd * net) / (this.sol + net);
+  }
+
+  impact(solIn) {
+    return (solIn * (1 - this.fee)) / this.quoteBuy(solIn) / this.spot() - 1;
+  }
+
+  buy(solIn) {
+    const out = this.quoteBuy(solIn);
+    this.sol += solIn;
+    this.herd -= out;
+    return out;
+  }
+
+  sell(herdIn) {
+    const net = herdIn * (1 - this.fee);
+    const out = (this.sol * net) / (this.herd + net);
+    this.herd += herdIn;
+    this.sol -= out;
+    return out;
+  }
+
+  // Arbitrage moves the price a fraction rho of the way back to `ref`, along the curve.
+  revert(ref, rho) {
+    if (rho <= 0) return;
+    const k = this.sol * this.herd;
+    const p = this.spot() - rho * (this.spot() - ref);
+    this.sol = Math.sqrt(k * p);
+    this.herd = Math.sqrt(k / p);
+  }
+
+  // Liquidity providers withdraw a share of both sides (price unchanged).
+  withdraw(share) {
+    this.sol *= 1 - share;
+    this.herd *= 1 - share;
+  }
+}
+
+// Front-runner: buys before our chunk as much as still lets our min-out pass, then sells after it.
+function bestSandwich(pool, chunk, minOut) {
+  let lo = 0;
+  let hi = pool.sol;
+  for (let i = 0; i < 60; i += 1) {
+    const mid = (lo + hi) / 2;
+    const c = pool.clone();
+    c.buy(mid);
+    if (c.quoteBuy(chunk) >= minOut) lo = mid;
+    else hi = mid;
+  }
+  if (lo === 0) return 0;
+  const c = pool.clone();
+  const got = c.buy(lo);
+  c.buy(chunk);
+  const profit = c.sell(got) - lo;
+  return profit > 0 ? lo : 0;
+}
+
+// Purchase program for one season (document/REKT_MINING.md §7.5).
+//   limit     per-trade impact ceiling. Checked before each chunk, and enforced on-chain with min-out at the
+//             pre-trade spot × (1 + limit). If either fails, the program stops; the SOL stays in the season's ledger.
+//   slippage  tolerance below the pre-trade quote (min-out = max of both). Room a front-runner can use.
+//   rho       arbitrage between chunks, 0 = none (worst case)
+//   attacker  front-runs every chunk up to the min-out
+//   onChunk   hook to change the pool between chunks (e.g. liquidity withdrawn)
+export function runPurchase(pool, { budget, chunks, limit = 0.005, slippage = limit, rho = 0, attacker = false, onChunk }) {
+  const startSpot = pool.spot();
+  const chunk = budget / chunks;
+  let spent = 0;
+  let tokens = 0;
+  let attackerProfit = 0;
+  let maxImpact = 0;
+  let halted = null;
+  for (let i = 0; i < chunks; i += 1) {
+    onChunk?.(pool, i);
+    const spotBefore = pool.spot();
+    const est = pool.impact(chunk);
+    if (est > limit) {
+      halted = { at: i, reason: 'estimate above limit' };
+      break;
+    }
+    const minOut = Math.max((chunk * (1 - pool.fee)) / (spotBefore * (1 + limit)), pool.quoteBuy(chunk) * (1 - slippage));
+    let front = 0;
+    let frontTokens = 0;
+    if (attacker) {
+      front = bestSandwich(pool, chunk, minOut);
+      if (front > 0) frontTokens = pool.buy(front);
+    }
+    const quote = pool.quoteBuy(chunk);
+    if (quote < minOut) {
+      if (front > 0) pool.sell(frontTokens);
+      halted = { at: i, reason: 'min-out failed' };
+      break;
+    }
+    const out = pool.buy(chunk);
+    maxImpact = Math.max(maxImpact, (chunk * (1 - pool.fee)) / out / spotBefore - 1);
+    if (front > 0) attackerProfit += pool.sell(frontTokens) - front;
+    spent += chunk;
+    tokens += out;
+    pool.revert(startSpot, rho);
+  }
+  const avg = tokens === 0 ? 0 : (spent * (1 - pool.fee)) / tokens;
+  return {
+    spent,
+    tokens,
+    leftover: budget - spent,
+    totalPremium: tokens === 0 ? 0 : avg / startSpot - 1,
+    maxImpact,
+    attackerProfit,
+    halted,
+  };
 }
 
 // ---------------------------------------------------------------- season layer

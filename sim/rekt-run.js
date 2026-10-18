@@ -2,9 +2,10 @@
 import { NATIVE } from './stampede.js';
 import {
   HONEST_MIX,
+  HerdPool,
   POLICY,
+  RektTreasury,
   bestFarm,
-  buyback,
   cappedSafetyMargin,
   freshCurve,
   heldPairTrip,
@@ -15,6 +16,7 @@ import {
   policyPool,
   rng,
   roundTrip,
+  runPurchase,
   sandwich,
   strategyMultiplier,
 } from './rekt-mining.js';
@@ -156,7 +158,7 @@ const worst = (H, extra = {}) => ({ pool: 'policy', H, mBar: pm, mF: POLICY.cap,
 
 console.log(`## 6. v0.1 policy across season revenue (alpha ${POLICY.alpha}, ops floor ${OPS} SOL, worst-case farmer)\n`);
 table(
-  ['Honest volume (SOL)', 'Protocol revenue H', 'Pool (SOL)', 'Pool / revenue', 'Best farm profit', 'Honest keep if someone burns 1×H'],
+  ['Honest volume (SOL)', 'Protocol revenue H', 'Pool (SOL)', 'Pool / revenue', 'Model: best reward-driven farm profit', 'Honest keep if someone burns 1×H'],
   [10_000, 50_000, 100_000, 1_000_000, 10_000_000].map((vol) => {
     const H = vol * 0.0045;
     const p = worst(H);
@@ -174,25 +176,77 @@ console.log('## 7. $HERD price scenarios: rejected fixed token budget vs. v0.1 p
   const basePrice = 0.0001; // native per $HERD at 1x
   const B = pool / basePrice; // fixed budget sized to match the policy pool at 1x
   table(
-    ['$HERD price', 'Fixed B_t: pool value', 'Fixed: farm profit', 'Fixed: honest keep', 'Policy: pool value', 'Policy: farm profit', 'Policy: $HERD bought (M)'],
+    ['$HERD price', 'Fixed B_t: pool value', 'Fixed: model farm profit', 'Fixed: honest keep', 'Policy: pool value', 'Policy: model farm profit', 'Policy: $HERD bought (M), 28 chunks, no arbitrage'],
     [0.1, 0.5, 1, 2, 5, 10].map((mult) => {
       const price = basePrice * mult;
       const fixed = bestFarm({ pool: 'fixed', H, mBar: pm, mF: POLICY.cap, cF: cheapest, budgetValue: B * price, dh: { ellH: dhHonest, farmerEligible: 1 } });
       const pol = bestFarm(worst(H));
-      const tokens = buyback({ value: pool, liquidity: 2000, price, chunks: 28 }).tokens;
+      const tokens = runPurchase(new HerdPool({ sol: 2000, herd: 2000 / price }), { budget: pool, chunks: 28 }).tokens;
       return [`${f(mult, 1)}x`, f(B * price, 0), f(fixed.profit, 1), pct(fixed.honestRewardRatio), f(pool, 1), f(pol.profit, 1), f(tokens / 1e6, 2)];
     }),
   );
 }
 
-console.log('## 8. Controlled purchase: premium paid over the starting price\n');
+console.log('## 8. Controlled purchase: total premium vs. per-trade impact (pool fee 0.25%, limit 0.5% per trade)\n');
+console.log('Total premium: average execution price over the starting spot, fee excluded. rho: share of each chunk\'s impact that arbitrage removes before the next chunk.\n');
+{
+  const L = 1000;
+  const cell = (ratio, chunks, rho) => {
+    const r = runPurchase(new HerdPool({ sol: L, herd: L * 10_000 }), { budget: ratio * L, chunks, rho });
+    if (r.halted && r.spent === 0) return 'stopped, 100% unspent';
+    const note = r.halted ? ` (stopped, ${pct(r.leftover / (ratio * L))} unspent)` : '';
+    return `${pct2(r.totalPremium)} / max ${pct2(r.maxImpact)}${note}`;
+  };
+  table(
+    ['Pool / liquidity', '1 trade', '28 chunks, rho 0 (no arbitrage)', '28 chunks, rho 0.5', '28 chunks, rho 1', '100 chunks, rho 0'],
+    [0.01, 0.05, 0.1, 0.2, 0.5].map((ratio) => [f(ratio), cell(ratio, 1, 0), cell(ratio, 28, 0), cell(ratio, 28, 0.5), cell(ratio, 28, 1), cell(ratio, 100, 0)]),
+  );
+}
+
+console.log('## 9. Front-running each chunk (pool / liquidity 0.05, ceiling 0.5% per trade)\n');
+console.log('Slippage: how far below the pre-trade quote a chunk may fill. That gap is what a front-runner can use.\n');
 table(
-  ['Pool / $HERD liquidity', 'One purchase', '7 chunks', '28 chunks (4 a day, 7 days)', 'Chunks for <= 0.5% each'],
-  [0.01, 0.05, 0.1, 0.5, 1].map((ratio) => {
-    const run = (chunks) => pct2(buyback({ value: ratio * 1000, liquidity: 1000, price: 1, chunks }).premium);
-    return [f(ratio), run(1), run(7), run(28), String(Math.ceil(ratio / 0.005))];
-  }),
+  ['Chunks', 'Expected impact per chunk', 'Pool fee', 'Slippage', 'Front-runner profit (% of budget)', 'Max executed impact', 'Total premium'],
+  [20, 100].flatMap((chunks) =>
+    [0, 25].flatMap((feeBps) =>
+      [0.005, 0.001].map((slippage) => {
+        const pool = new HerdPool({ sol: 1000, herd: 10_000_000, feeBps });
+        const est = pool.impact(50 / chunks);
+        const r = runPurchase(pool, { budget: 50, chunks, slippage, attacker: true });
+        return [String(chunks), pct2(est), `${feeBps / 100}%`, pct2(slippage), pct2(r.attackerProfit / 50), pct2(r.maxImpact), pct2(r.totalPremium)];
+      }),
+    ),
+  ),
 );
+
+console.log('## 10. Liquidity withdrawn mid-programme (pool / liquidity 0.1, 28 chunks, 50% of liquidity leaves before chunk 10)\n');
+{
+  const r = runPurchase(new HerdPool({ sol: 1000, herd: 10_000_000 }), { budget: 100, chunks: 28, onChunk: (p, i) => i === 10 && p.withdraw(0.5) });
+  table(['Chunks bought', 'Stopped because', 'SOL spent', 'SOL unspent (owed to the season in SOL)'], [[String(r.halted.at), r.halted.reason, f(r.spent, 1), f(r.leftover, 1)]]);
+}
+
+console.log(`## 11. Treasury ledgers over four seasons (alpha ${POLICY.alpha}, ops floor ${OPS} SOL, claim window 2 seasons)\n`);
+{
+  const tr = new RektTreasury({ opsFloor: OPS, claimWindow: 2 });
+  const points = new Map([['a', 1], ['b', 1], ['c', 2]]);
+  const plan = [
+    { revenue: 900, buyShare: 0.6, claimers: ['a', 'c'] },
+    { revenue: 450, buyShare: 1, claimers: ['a', 'b', 'c'] },
+    { revenue: 1200, buyShare: 1, claimers: ['c'] },
+    { revenue: 300, buyShare: 1, claimers: ['a', 'b', 'c'] },
+  ];
+  const rows = plan.map((p, i) => {
+    const t = i + 1;
+    if (t > 2) tr.expire(t - 2, t);
+    const s = tr.close(t, { revenue: p.revenue, points });
+    const buy = s.solToBuy * p.buyShare;
+    tr.purchase(t, buy, buy * 10_000);
+    tr.endPurchase(t, t);
+    p.claimers.forEach((c) => tr.claim(t, c, t));
+    return [String(t), f(p.revenue, 0), f(s.allocation, 1), pct(s.allocation / p.revenue), f(s.carryUsed, 1), f(s.spent, 1), f(s.solOwed, 1), f(tr.distributedCost(t), 1), f(tr.released, 1)];
+  });
+  table(['Season', 'Eligible revenue', 'New allocation', 'of revenue', 'Carry used (at cost)', 'SOL spent on $HERD', 'SOL owed (unspent)', 'Distributed at cost', 'Released to protocol (cumulative)'], rows);
+}
 
 function pct2(v) {
   return `${(v * 100).toFixed(2)}%`;
