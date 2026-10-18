@@ -26,7 +26,7 @@ Tasarım kanvası (landing + uygulama ekranları): https://claude.ai/artifact/SW
 - Bonded Creator (Bellwether) (isteğe bağlı bond + vesting), Fair Score, Rekt-back, Herd rank.
 - Protokol gelirinin 50 / 30 / 20 dağılımı ve token'ın gelirden **sonra** çıkması.
 - **CTO kuralı** (bkz. §6).
-- **Lucky Hoof**: uzun süre zarar taşıyanlar arasından her 100 kişiden 1'inin zararı iade (bkz. §9).
+- **Diamond Hooves**: uzun süre tutup zararına satanlara ödedikleri işlem ücretinden pay iadesi; bütçe protokol gelirinin 1/50'si, çekiliş yok (bkz. §9).
 
 **Önerilen, kesinleşmeyi bekleyen**
 - Creator / arayüz / Rekt-back / protokol oranları (§5).
@@ -119,8 +119,8 @@ Netleşecek parametreler:
 
 ## 7. Protokol gelirinin dağıtımı
 
-Protokol payı (%0.45) önce **operasyon tabanını** doldurur (aylık sabit bütçe: RPC, indexer,
-audit, hukuk). Kalan kısım şöyle dağıtılır:
+Protokol payından (%0.45) önce **Diamond Hooves bütçesi** (protokol gelirinin 1/50'si, §9) ayrılır,
+sonra **operasyon tabanı** dolar (aylık sabit bütçe: RPC, indexer, audit, hukuk). Kalan kısım şöyle dağıtılır:
 
 | Kalem | Pay | Ne yapar |
 |---|---|---|
@@ -170,40 +170,38 @@ Holder tablosunda küme üyeleri etiketlenir ("Cluster A" gibi).
 - Trampled dev ya da tespit edilen bağlantılı-cüzdan dump'larında holder'lara **orantılı** ödeme yapar.
 - Ödemeler havuz bakiyesiyle **sınırlıdır**, sınırsız garanti verilmez.
 
-### ⭐ Lucky Hoof: rastgele zarar iadesi (her 100 kişiden 1'i)
+### ⭐ Diamond Hooves: uzun süre tutanlara ücret iadesi (çekiliş yok)
 
-Perp DEX'lerdeki rastgele zarar iadesi (Variational tarzı) fikrinden esinlenildi. Amaç, kısa vadeli
-al-sat yapanı değil, **zararı uzun süre taşıyanı** ödüllendirmek.
+Amaç, kısa vadeli al-sat yapanı değil, **zararı uzun süre taşıyanı** ödüllendirmek. İlk tasarımdaki rastgele
+çekiliş (Lucky Hoof) **kaldırıldı**: rastgele para ödülü birçok ülkede şans oyunu/çekiliş mevzuatına girebiliyordu
+ve fonun yeterliliği öngörülemiyordu. Diamond Hooves'ta şans yoktur; şartı sağlayan her pozisyon payını alır.
 
-**Kim bilet alır?**
-- Bir token'ı en az **7 gün** tutup **zararına satan** cüzdan, o satış için 1 bilet alır.
-- **"Sıfıra kadar tuttu"** yolu: Token 30 gün boyunca işlem görmezse (ölü token), elinde tutanların zararı
-  satmadan da bilete dönüşür. Ölü token satılamadığı için bu yol gerekli.
-- Bilet başına zarar en az **0.1 SOL** olmalı (toz miktarları elemek için).
-- Aynı cüzdan + aynı token + aynı hafta için **en fazla 1 bilet** (cüzdanı bölüp bilet çoğaltmayı engeller).
-- Creator cüzdanları ve Fair Score'da bağlantılı küme olarak işaretlenen cüzdanlar hariç.
+**Kim hak kazanır?**
+- Bir token'ı en az **7 gün** tutup **zararına satan** cüzdan, o pozisyon için hak kazanır.
+- **"Sıfıra kadar tuttu"**: Token 30 gün boyunca işlem görmezse (ölü token), elinde tutanlar satmadan da hak kazanır.
+- Yalnızca HerdCall'da satın alınan tokenler sayılır (başka yerden transfer edilenlerin maliyeti bilinmez).
+  "Zararına" = satış fiyatı, cüzdanın o token için HerdCall'daki ortalama alış fiyatının altında.
+- Creator cüzdanları ve kasası hariç.
 
-**Çekiliş**
-- Haftalık: o haftanın biletleri arasından **her 100 biletten 1'i** (bilet sayısı / 100, aşağı yuvarlanır)
-  rastgele seçilir.
-- Rastgelelik **on-chain VRF** ile üretilir (Switchboard veya ORAO); blockhash kullanılmaz.
-  Seçim herkes tarafından doğrulanabilir.
-- Kazanan, o biletteki zararın **tamamını SOL olarak** geri alır; kişi başı tavan **5 SOL**.
-- Haftalık bütçe yetmezse ödemeler orantılı küçülür. Garanti yok, havuz kadar ödenir.
+**Bütçe hacimle orantılı, sabit pay:**
+- Haftalık bütçe = o haftanın **protokol gelirinin 1/50'si** (%2). Protokol payı hacmin %0,45'i olduğu için bütçe
+  hacmin yaklaşık **%0,009'u** eder. Örnek: 100.000$ hacimde protokol 450$ kazanır, bütçe **9$** olur.
+- Bütçe protokol payından, 50 / 30 / 20 dağılımından önce ayrılır (§7).
+- Program hiçbir zaman protokolün kazandığından fazlasına mal olamaz; zarar etme riski yoktur.
 
-**Finansman**: Rekt-back havuzuna giren ücretlerin **%25'i** ayrı bir **Lucky Hoof fonuna** ayrılır.
-Beklenen maliyet hesaplanabilir: haftalık uygun zarar × %1 (tavan ve bütçeyle sınırlı).
+**Dağıtım:**
+- Bütçe, hak kazanan pozisyonlar arasında **o pozisyonda ödenen işlem ücretleriyle orantılı** bölünür
+  (yani kullanıcının kendi hacmiyle orantılı).
+- Bir pozisyonun alacağı iade, o pozisyonda ödediği ücreti **asla aşamaz**. Ücreti ödeyip iade toplamak her zaman
+  zararınadır, bu yüzden istismar edilemez.
+- Bütçe tüm tavanları dolduracak kadar büyükse artan kısım protokolde kalır.
+- Liste Rekt-back v1 ile aynı yöntemle hesaplanır: zincir verisinden açık kaynaklı betik, Merkle kökü,
+  itiraz süresi, pull-claim.
 
-**Neden istismar edilemez?**
-- Beklenen değer = zararın %1'i. Bilerek zarar etmek her durumda kaybettirir.
-- Kendi cüzdanları arasında fiyat oynatıp sahte zarar üretmek %1'lik işlem ücretlerine ve 7 günlük tutma
-  şartına takılır; bilet başına tek hak ve kişi başı tavan getiriyi daha da düşürür.
+**Oyunlaştırma**: Hak kazananlar **Diamond Hooves** rozeti ve XP alır.
 
-**Oyunlaştırma**: Kazananlar sitede "Lucky Hoof" olarak duyurulur, **Lucky Hoof** rozeti alır.
-Bileti olan herkes çekilişe kadar sayacı görür.
-
-**Hukuki not**: Rastgele ödül, işleme bağlı olduğu için bazı ülkelerde şans oyunu/çekiliş mevzuatına
-girebilir. Lansmandan önce avukata danışılmalı (örneğin ücretsiz alternatif katılım yolu gerekebilir).
+**Not**: Tutarlar küçüktür (örnekte ödenen ücretin birkaç %'si). Oran (`revenueDivisor`) tek bir parametredir;
+gerçek hacim ve hak kazanan pozisyon verisi geldikçe gözden geçirilecek.
 
 **Herd rank (sezonluk XP)**: Calf → Yearling → Bull → Herd Leader
 
@@ -251,7 +249,7 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 - `dev_bond` + vesting hesabı: vesting bitmeden dev satışı → slash → Rekt-back havuzuna / holder'lara.
 - `creator_escrow`: creator gelirinin bekletilen yarısı; breakout / vesting sonunda serbest, trample'da slash.
 - `fee_router`: %1'i §5'teki tabloya göre böler (creator alıcıları en fazla 10 cüzdan, arayüz payı).
-- `lucky_hoof`: haftalık bilet kaydı, VRF ile çekiliş, kazanan ödemesi (fon bakiyesiyle sınırlı).
+- `diamond_hooves`: haftalık bütçe (protokol gelirinin 1/50'si), Merkle kökü ile hak kazananlar, pull-claim.
 - `cto_proposal` / `cto_vote`: tetikleyici kontrolü, holder oylaması, creator hakkının multisig'e devri.
 - `breakout`: likiditeyi DEX'e taşır, LP'yi kilitler, mint / freeze yetkisini kaldırır.
 - `herd_vault` + `builders_fund`: protokol payının kasaları (token öncesi birikim).
@@ -276,7 +274,7 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 - Stampede cap'i (tek cüzdanın ya da toplamın üst sınırı)
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı
 - Operasyon tabanının aylık tutarı
-- Lucky Hoof parametreleri: tutma süresi (7 gün), kişi başı tavan (5 SOL), fon payı (%25), ölü token eşiği (30 gün)
+- Diamond Hooves parametreleri: tutma süresi (7 gün), bütçe oranı (1/50), ölü token eşiği (30 gün), "zararına" tanımı (ortalama alış fiyatı)
 - Rekt-back'te "bağlantılı cüzdan dump'ı" tespitinin on-chain mi off-chain mi yapılacağı
 - Hukuki yapı (kumar / menkul kıymet riski, şirketin kurulacağı ülke)
 - Protokol token adı (`$HERD` şimdilik çalışma adı)
