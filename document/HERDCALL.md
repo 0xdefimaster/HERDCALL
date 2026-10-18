@@ -14,6 +14,8 @@ Tasarım kanvası (landing + uygulama ekranları): https://claude.ai/artifact/SW
 - Bu doküman: ürün mekanikleri, ücret modeli, gelir dağıtımı, marka.
 - [`STAMPEDE_SPEC.md`](STAMPEDE_SPEC.md): Lobby → Stampede açılışının teknik şartnamesi (formüller, durum makinesi,
   invariant'lar) ve [`sim/`](../sim) altında referans model + otomatik testler (`npm run test:sim`, `npm run sim`).
+- [`REKT_MINING.md`](REKT_MINING.md): "Kaybetsen bile kazanırsın" sezon puanlarının ekonomik modeli ve farm
+  simülasyonu (`npm run sim:rekt`).
 - Tasarım kanvası: Landing, Lobby (çalışan geri sayım), Token sayfası (Fair Score),
   Token oluşturma (Bellwether anahtarı), Rekt-back profili, Community Takeover oylaması.
 - React / Vite arayüzü (`src/`): kanvastaki 6 ekran, piksel tema, mock veri ve
@@ -231,6 +233,17 @@ ve fonun yeterliliği öngörülemiyordu. Diamond Hooves'ta şans yoktur; şart�
 **Not**: Tutarlar küçüktür (örnekte ödenen ücretin birkaç %'si). Oran (`revenueDivisor`) tek bir parametredir;
 gerçek hacim ve hak kazanan pozisyon verisi geldikçe gözden geçirilecek.
 
+### Rekt Mining: "kaybetsen bile kazanırsın", sınırlı havuzla (öneri, aşama 5)
+
+Papertrade / EOS betting mining psikolojisi, kayba göre sınırsız token basmadan. Ayrıntı ve simülasyon:
+[`REKT_MINING.md`](REKT_MINING.md).
+
+- Sezon puanı = ödenen **protokol ücreti** × çarpan. Zarar çarpanı (1,5x) yalnızca **7+ gün** tutulup zararla
+  kapanan pozisyonlarda; tutma çarpanı 1,25x; toplam çarpan en fazla 2x.
+- Havuzun değeri sezon protokol gelirinin $\alpha$ payıyla sınırlı (öneri $\alpha = 0{,}25$). Bu koşulla hiçbir farm
+  büyüklüğü kâr etmez (ispat ve test şartnamede). Sabit token bütçesi reddedildi: $HERD fiyatı yükselince farm kârlı olur.
+- Diamond Hooves'tan ayrı bütçe ve ayrı muhasebe. Board ve trend sıralaması ham hacme göre yapılmaz.
+
 **Herd rank (sezonluk XP)**: Calf → Yearling → Bull → Herd Leader
 
 | Davranış | XP |
@@ -302,6 +315,8 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
    simülasyonlar, saldırı testleri ve gerekli hukuki inceleme tamamlandıktan sonra.
 5. **Gelir ve yönetişim:** Protokol gelirini gerçek hacimle ölçmek, operasyon bütçesini doğrulamak; ürünün
    sürdürülebilirliği kanıtlandıktan sonra $HERD ve Herd Vault.
+   - Rekt Mining (sezon puanları) burada, $HERD ile birlikte: ekonomik model ve farm simülasyonu v0.1 hazır
+     ([`REKT_MINING.md`](REKT_MINING.md)); parametreler gerçek kullanıcı verisiyle güncellenecek.
 
 **Deneyler (uygulanmış özellik değil):**
 - Curve açılışında zamanla azalan anti-snipe ücreti: normal kullanıcıları da etkileyebilir ve botun ücreti
@@ -319,6 +334,7 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 - Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$ (GIWA seçilirse kişi başı tavan)
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı
 - Operasyon tabanının aylık tutarı
+- Rekt Mining: $\alpha$'nın kaynağı (Herd Vault payı mı, ayrı kalem mi), puanların $HERD'e dönüşüm takvimi, MEV/sandwich koruması
 - Diamond Hooves parametreleri: tutma süresi (7 gün), bütçe oranı (1/50), ölü token eşiği (30 gün), "zararına" tanımı (ortalama alış fiyatı)
 - Trample koşullarının kesin listesi (yalnızca zincir üstünde kanıtlanabilir olanlar)
 - Rekt-back v1 snapshot penceresi (24 saat önerisi) ve itiraz süresi
