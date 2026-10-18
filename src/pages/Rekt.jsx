@@ -1,11 +1,16 @@
 import React from 'react';
-import { Bar, Card, CardTitle, PixelButton } from '../components/ui';
-import { MOCK_BADGES, MOCK_CLAIMS, XP_RULES } from '../data/mock';
+import { Bar, Card, CardTitle, PixelButton, Tag } from '../components/ui';
+import { MOCK_BADGES, MOCK_BOARD, MOCK_CLAIMS, MOCK_DIAMOND_HOOVES, XP_RULES, formatUsd } from '../data/mock';
+import { DIAMOND_HOOVES, diamondHoovesBudget, diamondHoovesRebate, feeBreakdown } from '../lib/fees';
 
 const RANKS = ['Calf', 'Yearling', 'Bull', 'Bellwether'];
 const CURRENT_RANK = 'Yearling';
 
 export default function Rekt() {
+  // Example week: 7× the board's 24h protocol revenue.
+  const weeklyProtocol = feeBreakdown(MOCK_BOARD).protocol * 7;
+  const budget = diamondHoovesBudget(weeklyProtocol);
+  const rebateRatio = Math.min(1, budget / MOCK_DIAMOND_HOOVES.eligibleFeesUsd);
   return (
     <main className="max-w-[1240px] mx-auto px-6 pt-8 pb-14 flex flex-col gap-6">
       <Card aria-label="Herd rank" highlight className="p-6 flex flex-wrap gap-7 items-center">
@@ -38,6 +43,71 @@ export default function Rekt() {
             })}
           </ol>
         </div>
+      </Card>
+
+      <Card aria-label="Diamond Hooves" highlight className="flex flex-col gap-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 max-w-[640px]">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <CardTitle className="text-2xl">Diamond Hooves</CardTitle>
+              <Tag tone="outline">Planned</Tag>
+            </div>
+            <p className="mt-2 mb-0 text-hc-body">
+              Held a bag for {DIAMOND_HOOVES.minHoldDays}+ days and sold at a loss, or held it all the way to zero? You get part of the trading fees you paid
+              on that token back. Each week 1/{DIAMOND_HOOVES.revenueDivisor} of protocol revenue is shared between qualifying positions, in proportion to the
+              fees each one paid.
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-sm text-hc-muted">Next payout in</div>
+            <div className="font-terminal text-5xl leading-[0.9] text-hc-orange">{MOCK_DIAMOND_HOOVES.payoutIn}</div>
+          </div>
+        </div>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+          {[
+            ['Protocol revenue (7d)', formatUsd(Math.round(weeklyProtocol))],
+            [`Budget (1/${DIAMOND_HOOVES.revenueDivisor})`, formatUsd(Math.round(budget))],
+            ['Qualifying positions', MOCK_DIAMOND_HOOVES.eligiblePositions.toLocaleString('en-US')],
+            ['Fees paid back', `${(rebateRatio * 100).toFixed(1)}%`],
+          ].map(([label, value]) => (
+            <div key={label} className="bg-hc-bg border-[3px] border-hc-line p-3">
+              <div className="text-sm text-hc-muted">{label}</div>
+              <div className="font-terminal text-[32px] leading-none">{value}</div>
+            </div>
+          ))}
+        </div>
+        <div>
+          <h3 className="m-0 font-pixel font-bold text-sm uppercase">Your qualifying positions</h3>
+          <div className="mt-2.5 overflow-x-auto">
+            <table className="w-full min-w-[480px] border-collapse text-base">
+              <thead>
+                <tr>
+                  <th scope="col" className="text-left p-2 border-b-[3px] border-hc-line text-hc-muted font-normal">Token</th>
+                  <th scope="col" className="text-left p-2 border-b-[3px] border-hc-line text-hc-muted font-normal">Why it qualifies</th>
+                  <th scope="col" className="text-right p-2 border-b-[3px] border-hc-line text-hc-muted font-normal">Fees you paid</th>
+                  <th scope="col" className="text-right p-2 border-b-[3px] border-hc-line text-hc-muted font-normal">Est. rebate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {MOCK_DIAMOND_HOOVES.yourPositions.map((p) => (
+                  <tr key={p.token}>
+                    <td className="p-2 border-b-2 border-dashed border-hc-line font-terminal text-[22px]">{p.token}</td>
+                    <td className="p-2 border-b-2 border-dashed border-hc-line text-hc-body">{p.how} · held {p.heldDays}d</td>
+                    <td className="p-2 border-b-2 border-dashed border-hc-line text-right font-terminal text-[22px]">${p.feesPaidUsd.toFixed(2)}</td>
+                    <td className="p-2 border-b-2 border-dashed border-hc-line text-right font-terminal text-[22px] text-hc-up">
+                      +${diamondHoovesRebate(p.feesPaidUsd, MOCK_DIAMOND_HOOVES.eligibleFeesUsd, budget).toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <p className="m-0 text-sm text-hc-muted">
+          No draw and no luck: every qualifying position gets its share. A rebate is never more than the fees that position paid, and the weekly budget is a fixed
+          1/{DIAMOND_HOOVES.revenueDivisor} of protocol revenue, so the program can never cost more than HerdCall earns. Tokens with no trades for{' '}
+          {DIAMOND_HOOVES.deadTokenDays} days count as held to zero. Only tokens bought on HerdCall count. Example figures.
+        </p>
       </Card>
 
       <div className="flex flex-wrap gap-6 items-start">

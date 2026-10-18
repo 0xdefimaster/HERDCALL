@@ -14,6 +14,24 @@ export const PROTOCOL_SPLIT = [
   { key: 'operations', pct: 20, title: 'Operations', note: 'Team, audits, infra' },
 ];
 
+// Diamond Hooves: weekly fee rebate for long-hold losses (document/HERDCALL.md §9). No randomness.
+// Budget is a fixed slice of protocol revenue, so the program can never cost more than it earns.
+export const DIAMOND_HOOVES = {
+  revenueDivisor: 50, // budget = protocol revenue / 50 (2%)
+  minHoldDays: 7,
+  deadTokenDays: 30,
+};
+
+// Weekly budget and per-position rebate: shared in proportion to fees paid, never more than the fees paid.
+export function diamondHoovesBudget(protocolRevenue) {
+  return protocolRevenue / DIAMOND_HOOVES.revenueDivisor;
+}
+
+export function diamondHoovesRebate(feesPaid, eligibleFeesTotal, budget) {
+  if (eligibleFeesTotal <= 0) return 0;
+  return Math.min(feesPaid, (budget * feesPaid) / eligibleFeesTotal);
+}
+
 export const LOBBY_WINDOWS = [15, 30, 60];
 export const BOND_OPTIONS = [2, 3, 5];
 export const VEST_OPTIONS = [30, 60, 90];

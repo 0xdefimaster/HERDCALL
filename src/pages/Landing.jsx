@@ -36,6 +36,12 @@ const FEATURES = [
     body: 'When a creator breaks the rules, holders are paid pro-rata from the pool. Plus XP for coming back.',
   },
   {
+    Icon: CycleIcon,
+    title: 'Diamond Hooves',
+    tagline: 'Fee rebate for long holders',
+    body: 'Held a bag 7+ days and sold at a loss, or held it to zero? Get part of the trading fees you paid back. Funded by 1/50 of protocol revenue.',
+  },
+  {
     Icon: HLogo,
     title: 'Bonded Creator',
     tagline: 'Bond, vesting & escrow',

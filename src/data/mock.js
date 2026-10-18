@@ -28,6 +28,18 @@ export const MOCK_POOLS = {
   herdVaultUsd: 31600,
 };
 
+// Diamond Hooves week (USD). Protocol revenue for the week is derived from the board in the UI.
+export const MOCK_DIAMOND_HOOVES = {
+  payoutIn: '2d 14h',
+  eligiblePositions: 1840,
+  eligibleFeesUsd: 4600,
+  yourPositions: [
+    { token: '$CUD', heldDays: 12, how: 'Sold at a loss', feesPaidUsd: 12.4 },
+    { token: '$HAYDAY', heldDays: 20, how: 'Sold at a loss', feesPaidUsd: 21.8 },
+    { token: '$GRAZER', heldDays: 41, how: 'Held to zero', feesPaidUsd: 5.1 },
+  ],
+};
+
 // 24h market stats per token (lobby tokens have none yet).
 const MARKET = {
   MOOVE: { vol24hUsd: 28400, change24h: 22.4 },
@@ -124,6 +136,7 @@ export const XP_RULES = [
   { what: 'Held through day 7', pts: '+120' },
   { what: 'Came back after getting rekt', pts: '+200' },
   { what: 'Voted in a Takeover', pts: '+60' },
+  { what: 'Qualified for Diamond Hooves', pts: '+50' },
   { what: 'Bought a token that broke out', pts: '+80' },
 ];
 
@@ -131,6 +144,7 @@ export const MOCK_BADGES = [
   { name: 'First Call', earned: true },
   { name: 'Rekt 5x, still here', earned: true },
   { name: 'Took the Reins', earned: true },
+  { name: 'Diamond Hooves', earned: false },
   { name: 'More Cowbell', earned: false },
 ];
 
