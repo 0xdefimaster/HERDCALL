@@ -37,9 +37,9 @@ const FEATURES = [
   },
   {
     Icon: CycleIcon,
-    title: 'Lucky Hoof',
-    tagline: '1 in 100 losses refunded',
-    body: 'Held a bag 7+ days and sold at a loss, or held it to zero? Every week one in every hundred tickets gets its loss back, up to 5 SOL.',
+    title: 'Diamond Hooves',
+    tagline: 'Fee rebate for long holders',
+    body: 'Held a bag 7+ days and sold at a loss, or held it to zero? Get part of the trading fees you paid back. Funded by 1/50 of protocol revenue.',
   },
   {
     Icon: HLogo,

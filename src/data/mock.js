@@ -26,21 +26,17 @@ export const MOCK_POOLS = {
   rektBackBalanceUsd: 48200,
   rektBackPaidUsd: 12900,
   herdVaultUsd: 31600,
-  luckyHoofUsd: 9800,
 };
 
-export const MOCK_LUCKY_HOOF = {
-  drawIn: '2d 14h',
-  ticketsThisWeek: 1840,
-  yourTickets: [
-    { token: '$CUD', lossSol: 0.8, heldDays: 12, how: 'Sold at a loss' },
-    { token: '$HAYDAY', lossSol: 1.4, heldDays: 20, how: 'Sold at a loss' },
-    { token: '$GRAZER', lossSol: 0.35, heldDays: 41, how: 'Held to zero' },
-  ],
-  lastWinners: [
-    { who: '9fQe…xT2m', token: '$RUGBULL', sol: '2.10' },
-    { who: 'Qa9t…L2xe', token: '$CUD', sol: '0.65' },
-    { who: 'Zm4p…9Yuw', token: '$TAILS', sol: '5.00' },
+// Diamond Hooves week (USD). Protocol revenue for the week is derived from the board in the UI.
+export const MOCK_DIAMOND_HOOVES = {
+  payoutIn: '2d 14h',
+  eligiblePositions: 1840,
+  eligibleFeesUsd: 4600,
+  yourPositions: [
+    { token: '$CUD', heldDays: 12, how: 'Sold at a loss', feesPaidUsd: 12.4 },
+    { token: '$HAYDAY', heldDays: 20, how: 'Sold at a loss', feesPaidUsd: 21.8 },
+    { token: '$GRAZER', heldDays: 41, how: 'Held to zero', feesPaidUsd: 5.1 },
   ],
 };
 
@@ -140,7 +136,7 @@ export const XP_RULES = [
   { what: 'Held through day 7', pts: '+120' },
   { what: 'Came back after getting rekt', pts: '+200' },
   { what: 'Voted in a Takeover', pts: '+60' },
-  { what: 'Earned a Lucky Hoof ticket', pts: '+50' },
+  { what: 'Qualified for Diamond Hooves', pts: '+50' },
   { what: 'Bought a token that broke out', pts: '+80' },
 ];
 
@@ -148,7 +144,7 @@ export const MOCK_BADGES = [
   { name: 'First Call', earned: true },
   { name: 'Rekt 5x, still here', earned: true },
   { name: 'Took the Reins', earned: true },
-  { name: 'Lucky Hoof', earned: false },
+  { name: 'Diamond Hooves', earned: false },
   { name: 'More Cowbell', earned: false },
 ];
 
