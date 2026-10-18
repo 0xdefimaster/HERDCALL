@@ -2,9 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { Bar, Card, CardTitle, PixelButton, Row, Tag, TokenAvatar } from '../components/ui';
 import { MOCK_BOARD, MOCK_LOBBY, findToken } from '../data/mock';
+import { projectShare, projectStampede } from '../lib/stampede';
 import { useWallet } from '../wallet/WalletContext';
 
 const QUICK_AMOUNTS = ['0.1', '0.5', '1', '5'];
+
+const formatMcap = (sol) => `${sol.toLocaleString('en-US', { maximumFractionDigits: 1 })} SOL`;
+const formatTokens = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : Math.floor(n).toLocaleString('en-US'));
 
 export function formatClock(secs) {
   return `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
@@ -34,6 +38,10 @@ function Lobby({ token }) {
 
   const cleared = secs === 0;
   const progress = Math.round(((MOCK_LOBBY.windowSecs - secs) / MOCK_LOBBY.windowSecs) * 100);
+  const projection = projectStampede(pen);
+  const amountSol = parseFloat(amount);
+  // Before joining, preview the pen with this deposit added (it moves the price too).
+  const myShare = joined ? projectShare(amountSol, pen) : projectShare(amountSol, pen + (amountSol > 0 ? amountSol : 0));
 
   const join = () => {
     const sol = parseFloat(amount);
@@ -78,7 +86,7 @@ function Lobby({ token }) {
             <div className="font-pixel text-[15px] text-hc-muted">The bell has rung</div>
             <div className="font-pixel font-bold uppercase leading-[1.05] text-hc-orange text-[clamp(36px,5vw,60px)]">The herd is in.</div>
             <p className="m-0 text-hc-body">
-              Everyone entered at the same clearing price. Curve trading is open.
+              Everyone entered at {projection ? formatMcap(projection.mcapSol) : 'the same'} mcap. The curve opened at the same price.
             </p>
           </>
         ) : (
@@ -93,8 +101,12 @@ function Lobby({ token }) {
           <div className="bg-hc-bg border-[3px] border-hc-line p-3"><div className="text-sm text-hc-muted">SOL in the pen</div><div className="font-terminal text-[34px] leading-none">{pen.toFixed(1)}</div></div>
           <div className="bg-hc-bg border-[3px] border-hc-line p-3"><div className="text-sm text-hc-muted">Snipers w/ edge</div><div className="font-terminal text-[34px] leading-none text-hc-navy-text">0</div></div>
         </div>
+        <div aria-label="Entry price" className="w-full text-left p-3.5 border-[3px] border-hc-orange bg-hc-bg flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <span className="text-hc-body text-base">{cleared ? 'Everyone entered at' : 'If the bell rang now, everyone enters at'}</span>
+          <span className="font-terminal text-[34px] leading-none text-hc-orange">{projection ? `${formatMcap(projection.mcapSol)} mcap` : '—'}</span>
+        </div>
         <div className="w-full text-left p-3.5 border-[3px] border-dashed border-hc-line text-hc-body text-base">
-          Orders in the Lobby are batched. When the bell rings, the whole pen clears at <strong className="text-hc-cream">one price</strong>. Being first in the block gives no edge.
+          The pen makes <strong className="text-hc-cream">one buy</strong> when the bell rings. Everyone gets tokens in proportion to what they put in, at <strong className="text-hc-cream">one price</strong>, and the curve opens at that same price. More SOL in the pen means a higher entry price, never a refund. Being first in the block gives no edge.
         </div>
       </Card>
 
@@ -134,8 +146,11 @@ function Lobby({ token }) {
         ) : (
           <PixelButton onClick={join} disabled={cleared} className="min-h-[58px] text-[17px]">Answer the call</PixelButton>
         )}
+        <Row label={joined ? 'Your share now' : 'You would get'}>
+          <span className="font-terminal text-[22px]">{myShare > 0 ? `${formatTokens(myShare)} $${token.symbol}` : '—'}</span>
+        </Row>
         <p className="m-0 text-[15px] text-hc-muted">
-          You pay the clearing price, same as everyone. Anything above the launch cap is refunded. Preview only — no transaction is sent yet.
+          You pay the Stampede price, same as everyone. The number moves until the bell: more SOL in the pen means fewer tokens per SOL. Preview only — no transaction is sent yet.
         </p>
         <div className="border-t-[3px] border-dashed border-hc-line pt-3.5">
           <h3 className="m-0 mb-2.5 font-pixel text-[13px] font-normal text-hc-muted">Recent joins</h3>

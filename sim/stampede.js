@@ -1,6 +1,9 @@
-// Reference model of the Lobby → Stampede settlement in document/STAMPEDE_SPEC.md.
+// Reference model of the Lobby → Stampede settlement in document/STAMPEDE_SPEC.md (v0.2).
 // Integer math only (BigInt): native amounts in base units (lamports / wei), tokens in base units.
 // This is a specification aid, not contract code.
+//
+// Model: the Lobby pool makes one buy when the countdown ends. Every participant gets tokens in
+// proportion to their deposit, and everyone pays one price: the price the curve opens at.
 
 export const BPS = 10_000n;
 
@@ -8,64 +11,99 @@ export function ceilDiv(a, b) {
   return (a + b - 1n) / b;
 }
 
-// Constant-product bonding curve with virtual reserves (v0 native, t0 tokens), k = v0 * t0.
-// C(x): net native reserve the curve must hold after x tokens are sold, rounded up (protocol-favourable).
-export function makeCurve({ v0, t0 }) {
-  if (v0 <= 0n || t0 <= 0n) throw new Error('virtual reserves must be positive');
-  return {
-    v0,
-    t0,
-    costOf(x) {
-      if (x < 0n || x >= t0) throw new Error('x out of range');
-      return ceilDiv(v0 * x, t0 - x);
-    },
-    // Largest x with costOf(x) <= n.
-    maxTokensFor(n) {
-      if (n < 0n) throw new Error('n must be >= 0');
-      return (t0 * n) / (v0 + n);
-    },
-    // Marginal (spot) price after x tokens are sold, as a fraction native/token.
-    spotPrice(x) {
-      return { num: v0 * t0, den: (t0 - x) * (t0 - x) };
-    },
-  };
+// Constant-product curve state with virtual reserves.
+//   v, t     virtual native / token reserves (price = v / t)
+//   k        invariant v * t (fixed after the Lobby settles)
+//   reserve  real native held by the curve
+//   sold     tokens in circulation that came from the curve (Lobby allocation included)
+export class CurveState {
+  constructor({ v, t, reserve = 0n, sold = 0n }) {
+    if (v <= 0n || t <= 0n) throw new Error('virtual reserves must be positive');
+    Object.assign(this, { v, t, k: v * t, reserve, sold });
+  }
+
+  // Native cost (rounded up) to buy dt tokens.
+  quoteBuy(dt) {
+    if (dt <= 0n || dt >= this.t) throw new Error('dt out of range');
+    return ceilDiv(this.k, this.t - dt) - this.v;
+  }
+
+  // Native returned (rounded down) for selling dt tokens.
+  quoteSell(dt) {
+    if (dt <= 0n || dt > this.sold) throw new Error('dt out of range');
+    return this.v - ceilDiv(this.k, this.t + dt);
+  }
+
+  buy(dt) {
+    const cost = this.quoteBuy(dt);
+    this.v += cost;
+    this.t -= dt;
+    this.reserve += cost;
+    this.sold += dt;
+    return cost;
+  }
+
+  sell(dt) {
+    const out = this.quoteSell(dt);
+    if (out > this.reserve) throw new Error('insolvent');
+    this.v -= out;
+    this.t += dt;
+    this.reserve -= out;
+    this.sold -= dt;
+    return out;
+  }
+
+  // Native needed to buy back every sold token right now (worst-case sell-off).
+  sellAllPayout() {
+    return this.sold === 0n ? 0n : this.v - ceilDiv(this.k, this.t + this.sold);
+  }
+
+  // Solvency slack: reserve minus the worst-case sell-off payout. Must stay >= 0.
+  slack() {
+    return this.reserve - this.sellAllPayout();
+  }
+
+  spotPrice() {
+    return { num: this.v, den: this.t };
+  }
 }
 
 // Pure settlement math for total deposits D (spec §4).
-export function settleMath({ curve, lobbySupply, feeBps, minTotal }, total) {
+export function settleMath({ v0, t0, curveSupply, feeBps, minTotal }, total) {
   if (total < minTotal) {
-    return { empty: true, X: 0n, U: 0n, F: 0n, G: 0n, E: total, netMax: 0n };
+    return { empty: true, X: 0n, N: 0n, F: 0n, refund: total };
   }
-  const netMax = (total * (BPS - feeBps)) / BPS;
-  const xFromDemand = curve.maxTokensFor(netMax);
-  const X = xFromDemand < lobbySupply ? xFromDemand : lobbySupply;
-  if (X === 0n) {
-    return { empty: true, X: 0n, U: 0n, F: 0n, G: 0n, E: total, netMax };
-  }
-  const U = curve.costOf(X);
-  const G = ceilDiv(U * BPS, BPS - feeBps);
-  const F = G - U;
-  const E = total - G;
-  return { empty: false, X, U, F, G, E, netMax, oversubscribed: xFromDemand >= lobbySupply };
+  const N = (total * (BPS - feeBps)) / BPS; // net native that buys tokens
+  const F = total - N; // fee
+  const X = (N * t0) / (v0 + 2n * N); // tokens to the Lobby (always < t0 / 2)
+  if (X === 0n) return { empty: true, X: 0n, N: 0n, F: 0n, refund: total };
+  if (X > curveSupply) throw new Error('curve supply too small for this curve');
+  return { empty: false, X, N, F, refund: 0n };
+}
+
+// The price everyone would get if the bell rang now (spec §6). Shown live during the countdown.
+export function projectedPrice(params, total) {
+  const r = settleMath(params, total);
+  if (r.empty) return null;
+  return { netPerToken: { num: r.N, den: r.X }, grossPerToken: { num: total, den: r.X }, tokens: r.X };
 }
 
 export const State = Object.freeze({ Open: 'Open', Settling: 'Settling', Settled: 'Settled', Cancelled: 'Cancelled' });
 
 export class Lobby {
-  constructor({ curve, lobbySupply, feeBps, closeAt, settleDeadline, minDeposit, minTotal, maxTotal }) {
+  constructor({ v0, t0, curveSupply, feeBps, closeAt, settleDeadline, minDeposit, minTotal, maxTotal, maxPerWallet = 0n }) {
     if (!(closeAt < settleDeadline)) throw new Error('closeAt must be before settleDeadline');
-    if (lobbySupply <= 0n || lobbySupply >= curve.t0) throw new Error('lobbySupply out of range');
-    Object.assign(this, { curve, lobbySupply, feeBps, closeAt, settleDeadline, minDeposit, minTotal, maxTotal });
+    // The Lobby can take up to t0/2 tokens; the curve must hold more than that.
+    if (2n * curveSupply < t0) throw new Error('curveSupply must be at least t0 / 2');
+    Object.assign(this, { v0, t0, curveSupply, feeBps, closeAt, settleDeadline, minDeposit, minTotal, maxTotal, maxPerWallet });
     this.terminal = null; // 'Settled' | 'Cancelled' once reached; never changes afterwards
     this.deposits = new Map();
     this.withdrawn = new Set();
     this.total = 0n;
     this.result = null;
-    // Balances held by the Lobby escrow and by the other recipients.
+    this.curve = null; // CurveState created at settlement
     this.escrowNative = 0n;
     this.escrowToken = 0n;
-    this.curveReserve = 0n;
-    this.curveSold = 0n;
     this.feesOut = 0n;
     this.paidNative = 0n;
     this.paidToken = 0n;
@@ -81,7 +119,9 @@ export class Lobby {
     if (this.state(now) !== State.Open) throw new Error('lobby not open');
     if (amount < this.minDeposit) throw new Error('below minimum deposit');
     if (this.total + amount > this.maxTotal) throw new Error('lobby cap reached');
-    this.deposits.set(addr, (this.deposits.get(addr) ?? 0n) + amount);
+    const next = (this.deposits.get(addr) ?? 0n) + amount;
+    if (this.maxPerWallet > 0n && next > this.maxPerWallet) throw new Error('wallet cap reached');
+    this.deposits.set(addr, next);
     this.total += amount;
     this.escrowNative += amount;
   }
@@ -93,12 +133,15 @@ export class Lobby {
     // Guarantee: every accepted deposit (>= minDeposit) receives at least one token unit.
     if (!r.empty && r.X * this.minDeposit < this.total) throw new Error('allocation granularity violated');
     this.result = r;
-    // Fund movements happen in one atomic step.
-    this.escrowNative -= r.U + r.F;
-    this.curveReserve = r.U;
-    this.curveSold = r.X;
-    this.feesOut = r.F;
-    this.escrowToken = r.X; // X tokens minted/moved to escrow for claims
+    if (r.empty) {
+      this.curve = new CurveState({ v: this.v0, t: this.t0 });
+    } else {
+      // Re-anchored curve: opens at the Lobby price, holds the Lobby's net native as real reserve.
+      this.curve = new CurveState({ v: this.v0 + r.N, t: this.t0 - r.X, reserve: r.N, sold: r.X });
+      this.escrowNative -= r.N + r.F;
+      this.feesOut = r.F;
+      this.escrowToken = r.X;
+    }
     this.terminal = State.Settled;
     return r;
   }
@@ -116,9 +159,9 @@ export class Lobby {
     if (d === 0n) throw new Error('nothing to claim');
     if (this.withdrawn.has(addr)) throw new Error('already withdrawn');
     this.withdrawn.add(addr);
-    const { X, E } = this.result;
+    const { X, empty } = this.result;
     const q = (d * X) / this.total;
-    const r = (d * E) / this.total;
+    const r = empty ? d : 0n;
     this.escrowToken -= q;
     this.escrowNative -= r;
     this.paidToken += q;
@@ -139,7 +182,7 @@ export class Lobby {
     return { tokens: 0n, refund: d };
   }
 
-  // Rounding dust becomes sweepable only once every participant has withdrawn.
+  // Token rounding dust becomes sweepable only once every participant has withdrawn.
   sweepDust() {
     if (this.terminal !== State.Settled) throw new Error('not settled');
     if (this.withdrawn.size !== this.deposits.size) throw new Error('claims outstanding');
@@ -155,25 +198,29 @@ export class Lobby {
 export const TOKEN = 1_000_000n;
 export const NATIVE = 1_000_000_000n;
 export const EXAMPLE = Object.freeze({
-  curve: { v0: 30n * NATIVE, t0: 1_073_000_000n * TOKEN },
+  v0: 30n * NATIVE,
+  t0: 1_073_000_000n * TOKEN,
+  totalSupply: 1_000_000_000n * TOKEN,
   curveSupply: 800_000_000n * TOKEN,
-  lobbySupply: 150_000_000n * TOKEN,
   feeBps: 100n,
   minDeposit: NATIVE / 100n, // 0.01
   minTotal: NATIVE / 10n, // 0.1
   maxTotal: 10_000n * NATIVE,
+  maxPerWallet: 0n, // 0 = no per-wallet cap
 });
 
 export function exampleLobby(overrides = {}) {
   const p = { ...EXAMPLE, ...overrides };
   return new Lobby({
-    curve: makeCurve(p.curve),
-    lobbySupply: p.lobbySupply,
+    v0: p.v0,
+    t0: p.t0,
+    curveSupply: p.curveSupply,
     feeBps: p.feeBps,
     closeAt: 30,
     settleDeadline: 330,
     minDeposit: p.minDeposit,
     minTotal: p.minTotal,
     maxTotal: p.maxTotal,
+    maxPerWallet: p.maxPerWallet,
   });
 }

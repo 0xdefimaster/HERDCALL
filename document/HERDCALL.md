@@ -25,6 +25,8 @@ Tasarım kanvası (landing + uygulama ekranları): https://claude.ai/artifact/SW
 **Karar verilenler**
 - İsim ve marka: HerdCall, piksel boğa maskotu, İngilizce / global.
 - Lobby → Stampede → Curve → Breakout yaşam döngüsü (batch auction ile anti-sniper).
+- **Stampede modeli (STAMPEDE_SPEC v0.2):** Lobby havuzu zilde tek alım yapar, herkes yatırdığı oranda token alır
+  ve herkes curve'ün açıldığı fiyattan girer. Üst sınır yok, iade yok; curve aynı fiyattan açılır.
 - Bonded Creator (Bellwether) (isteğe bağlı bond + vesting), Fair Score, Rekt-back, Herd rank.
 - Protokol gelirinin 50 / 30 / 20 dağılımı ve token'ın gelirden **sonra** çıkması.
 - **CTO kuralı** (bkz. §6).
@@ -63,8 +65,8 @@ Hedef "güvenli" değil, **adil** bir oyun: kaybedebilirsin ama hilesiz kaybeder
 | Aşama | Ne olur |
 |---|---|
 | **Lobby** | Token oluşturulur, 15 / 30 / 60 sn'lik pencere açılır (dev seçer). Kullanıcılar SOL yatırır, **işlem yoktur**, snipe edilecek bir şey yoktur. |
-| **Stampede** | Sayaç sıfırlanınca pen'deki tüm emirler **tek batch** olarak **tek bir clearing price** üzerinden gerçekleşir. Bloğa ilk giren ile son giren aynı fiyatı öder. Stampede cap'ini aşan kısım iade edilir. |
-| **Curve** | Ardından normal bonding curve açılır, anlık al-sat. |
+| **Stampede** | Sayaç sıfırlanınca havuz **tek bir alım** yapar ve herkes yatırdığı oranda token alır. Herkes **aynı fiyatı** öder: curve'ün açılacağı fiyat. Lobby'ye düşen token $X = N \cdot T_0 / (V_0 + 2N)$ ($N$: ücret sonrası havuz). Talep ne kadar büyük olursa olsun fazlası için **iade yoktur** (yalnızca settle hiç gerçekleşmezse herkes parasını geri çeker); havuz büyüdükçe fiyat yükselir. Geri sayım boyunca "zil şimdi çalsa herkes X mcap'ten girer" canlı gösterilir. |
+| **Curve** | Curve, Stampede fiyatından açılır (yeniden çapalanmış rezervler). Zilden sonra ilk alan biraz daha yüksek öder, ucuz pencere kalmaz. Curve her zaman tüm satışları karşılayacak kadar rezerv tutar (STAMPEDE_SPEC §4). |
 | **Breakout** | Curve dolunca likidite DEX'e (Raydium / Meteora) taşınır ve kilitlenir. Mint ve freeze yetkisi program tarafından **zorunlu** olarak kaldırılır. Breakout sonrası DEX havuzu ücretinin bir kısmı (öneri: %25) likiditeye geri eklenir. |
 
 ## 4. Bonded Creator (Bellwether) (ödül, ceza değil)
@@ -271,7 +273,8 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 
 - `launch` hesabı: token metadata, Stampede penceresi, durum makinesi (Lobby → Curve → Breakout).
 - `lobby_order` hesapları: Lobby boyunca emirler (escrow'da SOL).
-- `settle_stampede`: pencere bitince permissionless çağrılır, clearing price'ı hesaplar, dağıtımı yapar, fazlayı iade eder.
+- `settle_stampede`: pencere bitince permissionless çağrılır, Lobby tahsisini ($X$) hesaplar, curve'ü Stampede fiyatına
+  yeniden çapalar, ücreti ayırır; katılımcılar token'larını pull-claim ile alır.
 - `dev_bond` + vesting hesabı: vesting bitmeden dev satışı → slash → Rekt-back havuzuna / holder'lara.
 - `creator_escrow`: creator gelirinin bekletilen yarısı; breakout / vesting sonunda serbest, trample'da slash.
 - `fee_router`: %1'i §5'teki tabloya göre böler (creator alıcıları en fazla 10 cüzdan, arayüz payı).
@@ -284,11 +287,12 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 
 Özellikler birbirine bağımlılıklarına göre sıralanır. Bir aşama, başarı kriteri sağlanmadan sonrakine geçilmez.
 
-1. **Çekirdek launch protokolü (ilk öncelik):** Lobby, Stampede fiyatlandırması, tahsis, iade, bonding curve,
+1. **Çekirdek launch protokolü (ilk öncelik):** Lobby, Stampede fiyatlandırması, tahsis, bonding curve,
    breakout. Başarı kriteri yalnızca kontratın çalışması değil; [`STAMPEDE_SPEC.md`](STAMPEDE_SPEC.md)'deki
    invariant'ların saldırı ve sınır durumlarında korunması.
    - ✅ Şartname v0.1 + referans model + otomatik testler.
-   - ⏳ **Lobby kapasitesi kararı** (STAMPEDE_SPEC §9): kontrat yazılmadan önce.
+   - ✅ **Lobby kapasitesi kararı:** model B (STAMPEDE_SPEC v0.2). Havuz curve'ün açılış fiyatından alır, üst sınır
+     ve iade yok; formül, ödeme gücü ispatı ve testler şartnamede.
    - ⏳ Zincir seçimi; ardından test ağında kontrat ve aynı invariant testleri.
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
    açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda.
@@ -301,7 +305,7 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 
 **Deneyler (uygulanmış özellik değil):**
 - Curve açılışında zamanla azalan anti-snipe ücreti: normal kullanıcıları da etkileyebilir ve botun ücreti
-  ödemesini engellemez. Lobby kapasitesi seçenekleriyle karşılaştırmalı simülasyon sonrası değerlendirilecek.
+  ödemesini engellemez. v0.2'de zilden sonra ucuz pencere kalmadığı için ihtiyacı azaldı; ayrı simülasyonla değerlendirilecek.
 
 **Notlar:**
 - Arayüzdeki Diamond Hooves kartı "Planned" etiketiyle konsept önizlemesi olarak gösteriliyor.
@@ -309,10 +313,10 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 
 ## 14. Açık sorular
 
-- **Lobby kapasitesi:** $S_L$ büyüklüğü, curve parametreleri ya da dinamik $S_L$ (STAMPEDE_SPEC §9). En öncelikli karar.
+- **Limit fiyat (v2 adayı):** "En fazla şu mcap'e kadar alırım" emri (STAMPEDE_SPEC §11).
 - Breakout eşiği ve bonding curve parametreleri
 - Create fee miktarı
-- Stampede cap'i (tek cüzdanın ya da toplamın üst sınırı)
+- Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$ (GIWA seçilirse kişi başı tavan)
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı
 - Operasyon tabanının aylık tutarı
 - Diamond Hooves parametreleri: tutma süresi (7 gün), bütçe oranı (1/50), ölü token eşiği (30 gün), "zararına" tanımı (ortalama alış fiyatı)
