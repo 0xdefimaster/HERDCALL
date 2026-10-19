@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NATIVE, TOKEN } from './stampede.js';
-import { CURVE_EXAMPLE, Market, Phase, costToBreakout, feeOn, marketAfterLobby, splitFee } from './curve.js';
+import { CURVE_EXAMPLE, CreatorLock, Market, Phase, costToBreakout, feeOn, marketAfterLobby, splitFee, splitLpFees } from './curve.js';
 
 const BIG = 10n ** 30n;
 
@@ -180,4 +180,50 @@ test('a dead token: every holder can still sell everything back; the Stampede su
   assert.equal(m.curve.sold, 0n);
   assert.ok(m.curve.reserve >= surplus, 'the surplus never shrinks');
   assert.ok(surplus > 20n * NATIVE, 'and it is large: about N²/(V0+2N)');
+});
+
+test('creator lock ratio only goes down; locking again does not restore it', () => {
+  const next = rng(6);
+  for (let run = 0; run < 200; run += 1) {
+    const allocation = randBig(next, 1n, 10n ** 15n);
+    const lock = new CreatorLock(allocation);
+    let lowest = 10_000n;
+    for (let i = 0; i < 30; i += 1) {
+      const locked = randBig(next, 0n, allocation * 2n);
+      const r = lock.update(locked);
+      const now = locked >= allocation ? 10_000n : (locked * 10_000n) / allocation;
+      if (now < lowest) lowest = now;
+      assert.equal(r, lowest);
+    }
+  }
+  assert.equal(new CreatorLock(0n).ratioBps, 0n);
+});
+
+test('hold to earn: forfeited creator share goes to Rekt-back, on the curve and after breakout', () => {
+  const next = rng(7);
+  for (let i = 0; i < 2000; i += 1) {
+    const fee = randBig(next, 0n, 10n ** 12n);
+    const ratio = randBig(next, 0n, 10_000n);
+    for (const kind of ['bonded', 'unbonded']) {
+      const lp = splitLpFees(fee, kind, { lockRatioBps: ratio });
+      assert.equal(lp.liquidity + lp.creator + lp.rektBack + lp.protocol, fee, 'LP fee parts add up');
+      const full = splitLpFees(fee, kind);
+      assert.equal(lp.liquidity, full.liquidity, 'liquidity share never changes');
+      assert.equal(lp.protocol, full.protocol, 'protocol share never changes');
+      assert.equal(lp.creator + lp.rektBack, full.creator + full.rektBack, 'only creator and Rekt-back trade places');
+      if (kind === 'unbonded') assert.equal(lp.forfeited, 0n, 'unbonded creators keep their fixed share');
+      const curve = splitFee(fee, kind, { lockRatioBps: ratio });
+      const curveFull = splitFee(fee, kind);
+      assert.equal(Object.values(curve).reduce((a, b) => a + b, 0n), fee);
+      assert.equal(curve.protocol, curveFull.protocol);
+      assert.equal(curve.interface, curveFull.interface);
+    }
+  }
+  // Every creator gets at least pump.fun's 0.30% of volume on the curve.
+  const vol = 1_000_000n;
+  const fee = feeOn(vol, 100n);
+  const unbonded = splitFee(fee, 'unbonded');
+  const bonded = splitFee(fee, 'bonded');
+  assert.equal(unbonded.creatorNow, (vol * 30n) / 10_000n);
+  assert.equal(bonded.creatorNow + bonded.creatorEscrow, (vol * 50n) / 10_000n);
 });

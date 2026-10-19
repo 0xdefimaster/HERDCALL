@@ -10,8 +10,8 @@ import { BPS, NATIVE, exampleLobby } from './stampede.js';
 // Fee split in bps of notional (document/HERDCALL.md §5).
 export const FEE = Object.freeze({
   tradeBps: 100n,
-  bonded: { creator: 30n, interface: 10n, rektBack: 15n, protocol: 45n },
-  unbonded: { creator: 10n, interface: 10n, rektBack: 35n, protocol: 45n },
+  bonded: { creator: 50n, interface: 10n, rektBack: 10n, protocol: 30n },
+  unbonded: { creator: 30n, interface: 10n, rektBack: 15n, protocol: 45n },
 });
 
 const fee = (notional) => (notional * FEE.tradeBps) / BPS;
@@ -495,7 +495,8 @@ export function seasonPayoff(x, p) {
     const eligibleF = x * dh.farmerEligible;
     const eligibleH = H * dh.ellH;
     const budget = revenue / 50;
-    farmDh = eligibleH + eligibleF === 0 ? 0 : Math.min(eligibleF / 0.45, (budget * eligibleF) / (eligibleH + eligibleF));
+    // Fees paid = basis / protocol share; the smallest share (bonded, 0.30) gives the loosest cap, the worst case.
+    farmDh = eligibleH + eligibleF === 0 ? 0 : Math.min(eligibleF / 0.3, (budget * eligibleF) / (eligibleH + eligibleF));
   }
   return { value, farmReward, farmDh, honestReward, profit: farmReward + farmDh - cF * x };
 }

@@ -90,7 +90,7 @@ Damgalanmak **isteğe bağlıdır**. Damgasız token da açılabilir ama açık�
 |---|---|---|
 | Teminat (bond) | 2 / 3 / 5 SOL kilit | Yok |
 | Dev payı | 30 / 60 / 90 gün lineer vesting | Vesting yok |
-| Creator fee | **%0.30** | %0.10 |
+| Creator fee | **%0.50** (curve) / Meteora ücretinin **%50**'si (breakout sonrası) | %0.30 / Meteora ücretinin %30'u |
 | Creator escrow | Gelirin %50'si breakout'a / vesting sonuna kadar bekler | Yok |
 | Feed sıralaması | Boost | Standart |
 | Rozet | 🔔 Bellwether | Yok |
@@ -103,7 +103,12 @@ Damgalanmak **isteğe bağlıdır**. Damgasız token da açılabilir ama açık�
 - Escrow zamanla büyüyen ikinci bir teminat gibi çalışır: dev ne kadar başarılıysa,
   dump etmenin bedeli o kadar artar.
 - Creator geliri en fazla **10 cüzdana** bölünebilir (ekip, sanatçı, KOL); hepsi token sayfasında görünür.
-- Piyasa değerine göre kademeli creator fee **kullanılmaz** (pump.fun dersi).
+- Piyasa değerine göre kademeli creator fee **kullanılmaz** (pump.fun dersi): coin büyüdükçe creator'ın payı küçülmez.
+- **Tut, kazan:** Bonded creator'ın ücret payı, tahsisatının kasada hâlâ kilitli duran oranıyla çarpılır. Vesting
+  bitince creator çekmekte serbesttir, ama çektiği oranda payı **kalıcı olarak** düşer; oran yalnızca azalır (çekip
+  satıp geri koymak payı geri getirmez). Kaybedilen pay Rekt-back havuzuna gider. Ölçülen tek şey zincir üstündeki
+  kasa bakiyesidir; başka cüzdanlardan satış cezaya yol açmaz (kanıtlanamaz), Fair Score'da uyarı olarak görünür.
+  Unbonded creator'ın kasası yoktur; payı sabittir.
 
 ### Creator Bounty: creator'ın kendi tahsisatından tutanlara ödül (isteğe bağlı, aşama 2)
 
@@ -125,17 +130,31 @@ bakiyesiyle orantılı, tahsisatımın %20'si." Protokole maliyeti sıfırdır; 
 
 ## 5. Ücret modeli
 
-Curve üzerinde sabit **%1** işlem ücreti. Tüm dağılım program tarafından zorunlu tutulur
+Curve üzerinde sabit **%1** işlem ücreti (pump.fun: %1,25). Tüm dağılım program tarafından zorunlu tutulur
 ve on-chain herkese açıktır.
 
-| | Creator | Arayüz / referans | Rekt-back havuzu | Protokol |
+**Rakip pump.fun, ilke: creator'dan yana olmak.** Her creator en az pump.fun'ın verdiği kadarını (%0,30) alır;
+teminat yatıran (bonded) creator %67 fazlasını (%0,50) alır. Pump.fun'da creator payı piyasa değeri büyüdükçe
+%0,05'e kadar düşer (kaynaklara göre); HerdCall'da düşmez.
+
+| Curve (%1'in dağılımı) | Creator | Arayüz / referans | Rekt-back havuzu | Protokol |
 |---|---|---|---|---|
-| Bonded token | %0.30 | %0.10 | %0.15 | %0.45 |
-| Unbonded token | %0.10 | %0.10 | %0.35 | %0.45 |
+| Bonded token | %0.50 (yarısı escrow'da) | %0.10 | %0.10 | %0.30 |
+| Unbonded token | %0.30 | %0.10 | %0.15 | %0.45 |
+
+**Breakout sonrası** (kilitli Meteora DAMM v2 pozisyonundan toplanan ücretin dağılımı, CURVE_SPEC §5.8):
+
+| | Likiditeye geri | Creator | Rekt-back havuzu | Protokol |
+|---|---|---|---|---|
+| Bonded token | %25 | %50 | %10 | %15 |
+| Unbonded token | %25 | %30 | %15 | %30 |
+
+- Bonded creator'ın iki aşamadaki payı da "tut, kazan" kuralına bağlıdır (§4); kaybedilen pay Rekt-back'e gider.
+- Holder'lara doğrudan ücret dağıtılmaz (menkul kıymet riski, her dağıtımda snapshot); holder'ı koruyan kısım Rekt-back havuzudur.
 
 - **Arayüz / referans payı**: işlemi getiren terminal, Telegram botu ya da referans linki alır
   (Zora ve Clanker'daki model). Terminallerin entegre olması için ekonomik sebep.
-- Unbonded token'lar havuza daha çok öder, çünkü herd daha çok risk taşır.
+- Unbonded token'lar Rekt-back havuzuna daha çok öder, çünkü herd daha çok risk taşır.
 - v1'de Rekt-back ücret payı ayrı bir havuzda birikir; bu havuzun dağıtım kuralları v2 ile birlikte tanımlanacak.
   v1'de holder'lara yalnızca trample'da kesilen teminat ve escrow dağıtılır (§9).
 
@@ -160,7 +179,7 @@ Netleşecek parametreler:
 
 ## 7. Protokol gelirinin dağıtımı
 
-Protokol payından (%0.45) önce **Diamond Hooves bütçesi** (protokol gelirinin 1/50'si, §9) ayrılır,
+Protokol payından (bonded %0.30, unbonded %0.45) önce **Diamond Hooves bütçesi** (protokol gelirinin 1/50'si, §9) ayrılır,
 sonra **operasyon tabanı** dolar (aylık sabit bütçe: RPC, indexer, audit, hukuk), ardından **Rekt Mining payı**
 (gelirin en fazla %25'i, [`REKT_MINING.md`](REKT_MINING.md) §7.1; aşama 5'ten itibaren). Kalan kısım şöyle dağıtılır:
 
@@ -236,8 +255,9 @@ ve fonun yeterliliği öngörülemiyordu. Diamond Hooves'ta şans yoktur; şart�
 - Creator cüzdanları ve kasası hariç.
 
 **Bütçe hacimle orantılı, sabit pay:**
-- Haftalık bütçe = o haftanın **protokol gelirinin 1/50'si** (%2). Protokol payı hacmin %0,45'i olduğu için bütçe
-  hacmin yaklaşık **%0,009'u** eder. Örnek: 100.000$ hacimde protokol 450$ kazanır, bütçe **9$** olur.
+- Haftalık bütçe = o haftanın **protokol gelirinin 1/50'si** (%2). Protokol payı hacmin %0,30'u (bonded) ile %0,45'i
+  (unbonded) arasında olduğu için bütçe hacmin yaklaşık **%0,006–0,009'u** eder. Örnek: 100.000$ unbonded hacimde
+  protokol 450$ kazanır, bütçe **9$** olur; bonded hacimde 300$ ve 6$.
 - Bütçe protokol payından, 50 / 30 / 20 dağılımından önce ayrılır (§7).
 - Program hiçbir zaman protokolün kazandığından fazlasına mal olamaz; zarar etme riski yoktur.
 

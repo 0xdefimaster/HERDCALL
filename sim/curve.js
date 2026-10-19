@@ -4,22 +4,62 @@ import { BPS, NATIVE, TOKEN, ceilDiv, exampleLobby } from './stampede.js';
 
 export const Phase = Object.freeze({ Curve: 'Curve', BreakingOut: 'BreakingOut', Migrated: 'Migrated' });
 
-// Fee split in bps of the fee (document/HERDCALL.md §5: 0.30 / 0.10 / 0.15 / 0.45 of the 1% for bonded tokens).
+// Fee split in bps of the fee (document/HERDCALL.md §5). Of the 1%: bonded 0.50 / 0.10 / 0.10 / 0.30,
+// unbonded 0.30 / 0.10 / 0.15 / 0.45. Every creator gets at least pump.fun's 0.30%; bonded creators get more.
 export const FEE_SPLIT = Object.freeze({
-  bonded: { creator: 3000n, interface: 1000n, rektBack: 1500n, protocol: 4500n },
-  unbonded: { creator: 1000n, interface: 1000n, rektBack: 3500n, protocol: 4500n },
+  bonded: { creator: 5000n, interface: 1000n, rektBack: 1000n, protocol: 3000n },
+  unbonded: { creator: 3000n, interface: 1000n, rektBack: 1500n, protocol: 4500n },
 });
 export const CREATOR_ESCROW_BPS = 5000n; // bonded: half of the creator share waits in escrow
 
-// Splits a fee. Each part rounds down; the protocol takes the remainder, so the parts always add up to the fee.
-// Without an interface (direct trade) the interface share goes to the protocol.
-export function splitFee(fee, kind = 'bonded', { hasInterface = true } = {}) {
+// Fees of the locked Meteora position after breakout, in bps of each claim (CURVE_SPEC §5.8).
+export const LP_FEE_SPLIT = Object.freeze({
+  bonded: { liquidity: 2500n, creator: 5000n, rektBack: 1000n, protocol: 1500n },
+  unbonded: { liquidity: 2500n, creator: 3000n, rektBack: 1500n, protocol: 3000n },
+});
+
+// "Hold to earn": a bonded creator's fee share is scaled by the share of their allocation still locked in the
+// creator vault. The ratio only goes down; locking tokens again does not restore it.
+export class CreatorLock {
+  constructor(allocation) {
+    this.allocation = allocation;
+    this.ratioBps = allocation > 0n ? BPS : 0n;
+  }
+
+  update(locked) {
+    const r = this.allocation === 0n ? 0n : (locked >= this.allocation ? BPS : (locked * BPS) / this.allocation);
+    if (r < this.ratioBps) this.ratioBps = r;
+    return this.ratioBps;
+  }
+}
+
+// Splits a curve fee. Each part rounds down; the protocol takes the remainder, so the parts always add up to the fee.
+// Without an interface (direct trade) the interface share goes to the protocol. A bonded creator's share is scaled
+// by the lock ratio; what the creator forfeits goes to the Rekt-back pool.
+export function splitFee(fee, kind = 'bonded', { hasInterface = true, lockRatioBps = BPS } = {}) {
   const s = FEE_SPLIT[kind];
-  const creator = (fee * s.creator) / BPS;
+  const creatorFull = (fee * s.creator) / BPS;
+  const creator = kind === 'bonded' ? (creatorFull * lockRatioBps) / BPS : creatorFull;
   const iface = hasInterface ? (fee * s.interface) / BPS : 0n;
-  const rektBack = (fee * s.rektBack) / BPS;
+  const rektBack = (fee * s.rektBack) / BPS + (creatorFull - creator);
   const creatorEscrow = kind === 'bonded' ? (creator * CREATOR_ESCROW_BPS) / BPS : 0n;
-  return { creatorNow: creator - creatorEscrow, creatorEscrow, interface: iface, rektBack, protocol: fee - creator - iface - rektBack };
+  return { creatorNow: creator - creatorEscrow, creatorEscrow, interface: iface, rektBack, protocol: fee - creatorFull - iface - (fee * s.rektBack) / BPS };
+}
+
+// Splits a fee claimed from the locked Meteora position. Same remainder and lock-ratio rules as splitFee.
+export function splitLpFees(fee, kind = 'bonded', { lockRatioBps = BPS } = {}) {
+  const s = LP_FEE_SPLIT[kind];
+  const liquidity = (fee * s.liquidity) / BPS;
+  const creatorFull = (fee * s.creator) / BPS;
+  const creator = kind === 'bonded' ? (creatorFull * lockRatioBps) / BPS : creatorFull;
+  const rektBackBase = (fee * s.rektBack) / BPS;
+  return {
+    liquidity,
+    creator,
+    rektBack: rektBackBase + (creatorFull - creator),
+    protocol: fee - liquidity - creatorFull - rektBackBase,
+    forfeited: creatorFull - creator,
+  };
 }
 
 export const feeOn = (amount, feeBps) => ceilDiv(amount * feeBps, BPS);

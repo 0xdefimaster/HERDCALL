@@ -87,12 +87,16 @@ büyür (§8.4).
 
 | | Creator | Arayüz | Rekt-back havuzu | Protokol |
 |---|---|---|---|---|
-| Bonded (ücretin) | %30 (yarısı escrow'a) | %10 | %15 | %45 |
-| Unbonded (ücretin) | %10 | %10 | %35 | %45 |
+| Bonded (ücretin) | %50 (yarısı escrow'a) | %10 | %10 | %30 |
+| Unbonded (ücretin) | %30 | %10 | %15 | %45 |
+
+İlke: rakip pump.fun'dır ve HerdCall creator'dan yanadır. Her creator en az pump.fun'ın creator payını (%0,30)
+alır, bonded creator %0,50 alır; pay piyasa değeriyle düşmez.
 
 - Her pay aşağı yuvarlanır; **protokol kalanı alır**, böylece paylar her zaman ücrete eşittir.
 - İşlem bir arayüz (terminal, bot, referans) olmadan geldiyse arayüz payı protokole gider.
 - Bonded token'da creator payının yarısı escrow'a gider; ne zaman serbest kalacağı Bonded Creator şartnamesindedir.
+- **Tut, kazan (§5.8):** Bonded creator'ın payı kasa kilit oranıyla çarpılır; kaybedilen kısım Rekt-back havuzuna gider.
 - Stampede ücreti ($F$) de aynı tabloyla bölünür; arayüz payı, yatırmanın yapıldığı arayüze gider.
 
 ## 5. Breakout
@@ -144,6 +148,29 @@ fiyat sıçraması yok, fazla token yakılır.
 fiyatı, rezervde $N^2/(V_0 + 2N)$ kadar bir fazlalık bırakır (herkes satsa bile curve'de kalır; 80 native'lik
 Lobby'de 20 native'in üzerinde). Bu fazlalık breakout'ta LP'ye gider; breakout olmazsa curve'de kalır (§10).
 
+**5.7 Kilitli pozisyonun ücretleri.** Meteora DAMM v2'de ücretler havuza kendiliğinden eklenmez; pozisyon NFT'sini
+tutan program onları toplar. Herkes çağırabilen bir `claim_lp_fees` talimatı ücreti toplar ve §5.8'e göre böler;
+"likiditeye geri" payı aynı pozisyona likidite olarak eklenir ve o da kalıcı kilitlenir.
+
+**5.8 Breakout sonrası ücret dağılımı ve "tut, kazan"**
+
+| Toplanan ücretin | Likiditeye geri | Creator | Rekt-back havuzu | Protokol |
+|---|---|---|---|---|
+| Bonded | %25 | %50 | %10 | %15 |
+| Unbonded | %25 | %30 | %15 | %30 |
+
+- **Kilit oranı** $\lambda$ = kasada kilitli creator tokeni / breakout anındaki creator tahsisatı (en fazla 1).
+  Bonded creator'ın payı (curve'de de, breakout sonrasında da) $\lambda$ ile çarpılır; kalan kısım Rekt-back havuzuna
+  gider. Likidite, protokol ve arayüz payları $\lambda$'dan etkilenmez.
+- $\lambda$ **yalnızca azalır**: her güncellemede şimdiye kadarki en düşük değer kullanılır. Kasadan çekip satan,
+  sonra geri alıp yeniden kilitleyen creator payını geri kazanamaz.
+- Vesting süresince creator kasadan çekemez, $\lambda = 1$'dir. Unbonded creator'ın kasası yoktur; payı sabittir.
+- Ölçülen tek şey zincir üstündeki kasa bakiyesidir. Creator'ın başka cüzdanlardan satması kanıtlanamaz ve cezaya yol
+  açmaz (Fair Score'da uyarı olarak görünür).
+- Topluluk devralırsa (CTO, HERDCALL.md §6) creator'ın ücret hakkı ve kilit oranı topluluk multisig'ine geçer.
+- Farm güvenliği değişmez: en ucuz farmcının (kendi creator'ı ve arayüzü) protokol payı başına maliyeti iki token
+  türünde de 1,33'tür (REKT_MINING.md §2).
+
 ## 6. Arz
 
 - $S_{total} = S_{curve} + S_{LP}$, token oluşturulurken bir kez basılır; mint ve freeze yetkisi o anda kaldırılır.
@@ -165,8 +192,10 @@ Lobby'de 20 native'in üzerinde). Bu fazlalık breakout'ta LP'ye gider; breakout
 | C12 | Breakout rezervi işlem yolundan bağımsız | `breakout reserve depends only on the Stampede` |
 | C13 | $T_0 > S_{curve} + S_{LP}$ reddedilir; izin verilirse DEX yukarıdan açılır | `parameters` |
 | C14 | Ölü token: herkes hepsini geri satabilir; Stampede fazlalığı azalmaz | `a dead token` |
+| C15 | Kilit oranı yalnızca azalır; yeniden kilitlemek geri getirmez | `creator lock ratio only goes down` |
+| C16 | Kilit oranı yalnızca creator ile Rekt-back arasındaki bölüşümü değiştirir; paylar her zaman ücrete eşit; unbonded etkilenmez; her creator en az %0,30 alır | `hold to earn` |
 
-Mutasyon kontrolü: 8 kasıtlı hatanın 8'i yakalandı. Bozulan kurallar: kırpma, LP sınırı, geçiş ücreti, ücret kalanı,
+Mutasyon kontrolü: ilk sürümde 8 kasıtlı hatanın 8'i, tut-kazan ve yeni oranlar için 5 hatanın 5'i yakalandı. Bozulan kurallar: kırpma, LP sınırı, geçiş ücreti, ücret kalanı,
 breakout eşiği, kayma kontrolü, ücret yuvarlaması, $T_0$ kuralı. Testler kodun yazılan kuralları uyguladığını
 gösterir; zincir üstü davranışın kanıtı değildir.
 
@@ -207,9 +236,9 @@ yaratır; v0.1 bunun yerine yakmayı seçer.
 
 | Durum | Creator (hemen) | Creator escrow | Arayüz | Rekt-back havuzu | Protokol |
 |---|---|---|---|---|---|
-| Bonded, arayüz üzerinden | 0,150 | 0,150 | 0,100 | 0,150 | 0,450 |
-| Bonded, doğrudan | 0,150 | 0,150 | 0 | 0,150 | 0,550 |
-| Unbonded, arayüz üzerinden | 0,100 | 0 | 0,100 | 0,350 | 0,450 |
+| Bonded, arayüz üzerinden | 0,250 | 0,250 | 0,100 | 0,100 | 0,300 |
+| Bonded, doğrudan | 0,250 | 0,250 | 0 | 0,100 | 0,400 |
+| Unbonded, arayüz üzerinden | 0,300 | 0 | 0,100 | 0,150 | 0,450 |
 
 **8.4 Curve'de sandwich** (20 native Lobby sonrası; saldırgan iki yönde de %1 ücret öder)
 
@@ -254,9 +283,8 @@ yaratır; v0.1 bunun yerine yakmayı seçer.
 
 ## 10. Açık sorular
 
-- ✅ **DEX:** Meteora DAMM v2; LP kalıcı kilit. **Açık:** kilitli pozisyonun ücretleri nasıl dağıtılacak? HERDCALL.md §3
-  önerisi: %25'i likiditeye geri eklenir (DAMM v2'de ücretler kendiliğinden eklenmez; program toplar, likidite olarak
-  ekler ve onu da kilitler). Kalan %75 için seçenekler: holder'lar, creator, protokol, Rekt-back havuzu.
+- ✅ **DEX:** Meteora DAMM v2; LP kalıcı kilit. ✅ **Kilitli pozisyonun ücretleri:** %25 likiditeye, kalanı creator,
+  Rekt-back ve protokole (§5.8). ✅ **Program yükseltilebilir** (çoklu imza + 72 saat zaman kilidi, HERDCALL.md §12).
 - **Havuz ayarları:** DAMM v2 havuz ücret oranı ve ücretin hangi tokenden toplanacağı (yalnızca SOL ya da iki token).
 - **Geçiş ücreti $m$**: gerçek havuz kurulum maliyetine göre.
 - **Breakout'a ulaşmayan token'daki Stampede fazlalığı** (§5.6): curve'de mi kalsın, belirli bir süre işlem görmeyen

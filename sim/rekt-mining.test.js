@@ -132,7 +132,7 @@ test('separate accounting: season rewards sum to the pool, Diamond Hooves never 
     const x = next() * 5 * p.H;
     const r = seasonPayoff(x, p);
     assert.ok(Math.abs(r.farmReward + r.honestReward - r.value) < 1e-6 * (1 + r.value));
-    assert.ok(r.farmDh <= x / 0.45 + 1e-9, 'rebate never above the fees the farmer paid');
+    assert.ok(r.farmDh <= x / 0.3 + 1e-9, 'rebate never above the fees the farmer paid');
     if (p.pool === 'capped') assert.ok(r.value <= p.alpha * (p.H + x) + 1e-9);
   }
 });

@@ -1,7 +1,7 @@
 // Fee model from document/HERDCALL.md §5 and §7. Percentages of trade volume.
 export const FEE_SPLIT = {
-  bonded: { creator: 0.3, interface: 0.1, rektBack: 0.15, protocol: 0.45 },
-  unbonded: { creator: 0.1, interface: 0.1, rektBack: 0.35, protocol: 0.45 },
+  bonded: { creator: 0.5, interface: 0.1, rektBack: 0.1, protocol: 0.3 },
+  unbonded: { creator: 0.3, interface: 0.1, rektBack: 0.15, protocol: 0.45 },
 };
 
 // Share of a bonded creator's fees held in escrow until breakout / vest end.
