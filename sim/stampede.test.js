@@ -1,7 +1,8 @@
 // Automated checks for the invariants in document/STAMPEDE_SPEC.md §8. Run: npm run test:sim
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BPS, EXAMPLE, NATIVE, TOKEN, State, exampleLobby, makeCurve, settleMath } from './stampede.js';
+import { BPS, CurveState, EXAMPLE, NATIVE, TOKEN, State, exampleLobby, projectedPrice, settleMath } from './stampede.js';
+import { STAMPEDE, projectStampede } from '../src/lib/stampede.js';
 
 const OPEN = 0;
 const AT_SETTLE = 60;
@@ -33,113 +34,91 @@ function runLobby(deposits, overrides = {}) {
 }
 
 function checkInvariants({ lobby, result, claims }) {
-  const { X, U, F, G, E } = result;
+  const { X, N, F } = result;
   const D = lobby.total;
   const n = BigInt(lobby.deposits.size);
-  // I1 supply cap
-  assert.ok(X <= lobby.lobbySupply, 'I1: X <= S_L');
-  // I2 curve consistency
-  if (!result.empty) assert.equal(lobby.curveReserve, lobby.curve.costOf(lobby.curveSold), 'I2: reserve == C(sold)');
-  else assert.equal(lobby.curveReserve, 0n, 'I2: empty lobby leaves curve untouched');
-  // I3 spend bound
-  assert.ok(G <= D && G === U + F && E === D - G, 'I3: G = U + F <= D');
-  if (!result.empty) assert.ok(F * BPS <= G * lobby.feeBps + BPS, 'I3: fee within bps of gross');
-  // I4 / I5 rounding dust bounded by participant count
+  const c = lobby.curve;
+  // I1 supply bound
+  assert.ok(2n * X < lobby.t0 && X <= lobby.curveSupply, 'I1: X < t0/2 and X <= curve supply');
+  if (result.empty) {
+    // I13 empty lobby: curve untouched, everyone refunded in full
+    assert.equal(c.v, lobby.v0);
+    assert.equal(c.t, lobby.t0);
+    assert.equal(c.reserve, 0n);
+    for (const [addr, cl] of claims) assert.equal(cl.refund, lobby.deposits.get(addr), 'I13: full refund');
+    return;
+  }
+  // I2 re-anchored curve
+  assert.equal(c.v, lobby.v0 + N, 'I2: v = v0 + N');
+  assert.equal(c.t, lobby.t0 - X, 'I2: t = t0 - X');
+  assert.equal(c.reserve, N, 'I2: reserve = N');
+  assert.equal(c.sold, X, 'I2: sold = X');
+  // I3 every deposited unit buys tokens or pays the fee
+  assert.equal(N + F, D, 'I3: N + F = D');
+  assert.ok(F * BPS <= D * lobby.feeBps + BPS, 'I3: fee within bps of gross');
+  // I4 / I5 token dust bounded, no refunds
   let sumQ = 0n;
   let sumR = 0n;
-  for (const c of claims.values()) {
-    sumQ += c.tokens;
-    sumR += c.refund;
+  for (const cl of claims.values()) {
+    sumQ += cl.tokens;
+    sumR += cl.refund;
   }
   assert.ok(sumQ <= X && X - sumQ < n, 'I4: token dust < n');
-  assert.ok(sumR <= E && E - sumR < n, 'I5: native dust < n');
-  // I6 conservation: every deposited unit is in reserve, fees, refunds or escrow dust
-  assert.equal(D, lobby.curveReserve + lobby.feesOut + lobby.paidNative + lobby.escrowNative, 'I6: native conservation');
+  assert.equal(sumR, 0n, 'I5: no refunds when the lobby settles');
+  // I6 conservation
+  assert.equal(D, c.reserve + lobby.feesOut + lobby.paidNative + lobby.escrowNative, 'I6: native conservation');
   assert.equal(lobby.escrowToken + lobby.paidToken, X, 'I6: token conservation');
-  // I7 uniform price within one token unit / one native unit, I12 granularity
-  for (const [addr, c] of claims) {
+  // I7 one price for everyone, I12 granularity
+  for (const [addr, cl] of claims) {
     const d = lobby.deposits.get(addr);
-    if (result.empty) {
-      assert.equal(c.refund, d, 'I13: empty lobby refunds in full');
-      continue;
-    }
-    assert.ok(c.tokens >= 1n, 'I12: every depositor receives tokens');
-    const spent = d - c.refund;
-    assert.ok(spent * X >= c.tokens * G, 'I7: nobody pays below the clearing price');
-    assert.ok(spent * X < (c.tokens + 1n) * G + X, 'I7: overpay bounded by rounding');
+    assert.ok(cl.tokens >= 1n, 'I12: every depositor receives tokens');
+    assert.ok(d * X >= cl.tokens * D, 'I7: nobody pays below the Lobby price');
+    assert.ok(d * X < (cl.tokens + 1n) * D, 'I7: overpay below one token unit');
   }
+  // I11 continuity: Lobby price equals the curve's opening spot price up to one rounding step
+  const gap = N * c.t - X * c.v;
+  assert.ok(gap >= 0n, 'I11: opening spot is never below the Lobby price');
+  assert.ok(gap < lobby.v0 + 2n * N, 'I11: Lobby price exceeds opening spot by rounding only');
+  // I16 solvency at settlement
+  assert.ok(c.slack() >= 0n, 'I16: reserve covers a full sell-off');
+  // I17 the live projection is exact
+  const proj = projectedPrice(lobby, D);
+  assert.equal(proj.tokens, X, 'I17: projected tokens == settled tokens');
 }
 
-test('curve: costOf / maxTokensFor are exact inverses at the boundary', () => {
-  const curve = makeCurve(EXAMPLE.curve);
-  assert.equal(curve.costOf(0n), 0n);
-  const next = rng(7);
-  for (let i = 0; i < 2000; i += 1) {
-    const budget = randBig(next, 0n, 500n * NATIVE);
-    const x = curve.maxTokensFor(budget);
-    assert.ok(curve.costOf(x) <= budget, 'C(x) fits the budget');
-    assert.ok(curve.costOf(x + 1n) > budget, 'x is maximal');
+test('settlement: no refunds at any demand level, Lobby share stays below half the virtual supply', () => {
+  for (const sol of [1n, 5n, 20n, 50n, 100n, 186n, 1_000n, 10_000n]) {
+    const run = runLobby([['a', (sol * NATIVE) / 2n], ['b', (sol * NATIVE) / 2n]]);
+    assert.equal(run.result.empty, false);
+    checkInvariants(run);
   }
 });
 
-test('oversubscribed: all of S_L is sold and the excess is refunded pro-rata', () => {
-  const run = runLobby([
-    ['a', 50n * NATIVE],
-    ['b', 30n * NATIVE],
-    ['c', 20n * NATIVE],
-  ]);
-  const { result, lobby } = run;
-  assert.equal(result.oversubscribed, true);
-  assert.equal(result.X, lobby.lobbySupply);
-  assert.equal(result.U, lobby.curve.costOf(lobby.lobbySupply));
-  checkInvariants(run);
-  const a = run.claims.get('a');
-  const c = run.claims.get('c');
-  assert.ok(a.tokens > c.tokens * 2n && a.refund > c.refund * 2n, 'shares follow deposits');
-});
-
-test('undersubscribed: X is the largest affordable amount and S_L is not exceeded', () => {
-  const run = runLobby([
-    ['a', NATIVE],
-    ['b', 2n * NATIVE],
-  ]);
-  const { result, lobby } = run;
-  assert.equal(result.oversubscribed, false);
-  assert.ok(result.X < lobby.lobbySupply);
-  assert.ok(lobby.curve.costOf(result.X + 1n) > result.netMax, 'I11: X is maximal for net demand');
-  checkInvariants(run);
-});
-
-test('boundary: net demand exactly C(S_L)', () => {
-  const curve = makeCurve(EXAMPLE.curve);
-  const need = curve.costOf(EXAMPLE.lobbySupply);
-  // Smallest gross deposit whose net (after fee) reaches C(S_L).
-  let gross = (need * BPS + (BPS - EXAMPLE.feeBps) - 1n) / (BPS - EXAMPLE.feeBps);
-  while ((gross * (BPS - EXAMPLE.feeBps)) / BPS < need) gross += 1n;
-  const run = runLobby([['a', gross]]);
-  assert.equal(run.result.X, EXAMPLE.lobbySupply);
-  checkInvariants(run);
-  const below = runLobby([['a', gross - 1n]]);
-  assert.ok(below.result.X < EXAMPLE.lobbySupply, 'one unit less cannot clear all of S_L');
-  checkInvariants(below);
+test('continuity: the curve opens exactly at the price the Lobby paid', () => {
+  const run = runLobby([['a', 50n * NATIVE]]);
+  const { N, X } = run.result;
+  const c = run.lobby.curve;
+  // Compare N/X with v/t as floats; must agree to ~1e-9 relative.
+  const lobbyPrice = Number(N) / Number(X);
+  const spot = Number(c.v) / Number(c.t);
+  assert.ok(Math.abs(lobbyPrice - spot) / spot < 1e-9);
+  // The very next buy pays more than the Lobby price per token.
+  const dt = 1_000_000n * TOKEN;
+  assert.ok(c.quoteBuy(dt) * X > N * dt, 'first post-bell buyer pays above the Lobby price');
 });
 
 test('zero and below-minimum demand: empty settlement, full refunds, curve untouched', () => {
   const zero = exampleLobby();
-  const r0 = zero.settle(AT_SETTLE);
-  assert.equal(r0.empty, true);
-  assert.equal(zero.curveSold, 0n);
-  assert.equal(zero.curveReserve, 0n);
-
+  assert.equal(zero.settle(AT_SETTLE).empty, true);
+  assert.equal(zero.curve.reserve, 0n);
   const run = runLobby([['a', EXAMPLE.minDeposit], ['b', EXAMPLE.minDeposit]]);
   assert.equal(run.result.empty, true);
   checkInvariants(run);
 });
 
-test('fuzz: invariants hold across random lobbies, fees and supplies', () => {
+test('fuzz: invariants hold across random lobbies and fees', () => {
   for (let seed = 1; seed <= 300; seed += 1) {
     const next = rng(seed);
-    const lobbySupply = randBig(next, 10_000_000n * TOKEN, 800_000_000n * TOKEN);
     const feeBps = randBig(next, 0n, 300n);
     const n = 1 + Math.floor(next() * 150);
     const whale = next() < 0.3;
@@ -148,7 +127,34 @@ test('fuzz: invariants hold across random lobbies, fees and supplies', () => {
       const hi = whale && i === 0 ? 2_000n * NATIVE : 5n * NATIVE;
       deposits.push([`w${i}`, randBig(next, EXAMPLE.minDeposit, hi)]);
     }
-    checkInvariants(runLobby(deposits, { lobbySupply, feeBps }));
+    checkInvariants(runLobby(deposits, { feeBps }));
+  }
+});
+
+test('solvency: random trading after the bell never makes the curve insolvent', () => {
+  for (let seed = 1; seed <= 100; seed += 1) {
+    const next = rng(1_000 + seed);
+    const run = runLobby([['a', randBig(next, NATIVE, 500n * NATIVE)]]);
+    const c = run.lobby.curve;
+    let lastSlack = c.slack();
+    for (let i = 0; i < 200; i += 1) {
+      if (next() < 0.55) {
+        const room = c.t - 1n;
+        const dt = randBig(next, TOKEN, room / 50n > TOKEN + 1n ? room / 50n : TOKEN + 1n);
+        c.buy(dt);
+      } else if (c.sold > 0n) {
+        const dt = randBig(next, 1n, c.sold + 1n);
+        c.sell(dt > c.sold ? c.sold : dt);
+      }
+      assert.ok(c.v * c.t >= c.k, 'I16: rounding never lets the curve product fall below k');
+      const s = c.slack();
+      assert.ok(s >= 0n, 'I16: slack never negative');
+      assert.ok(s >= lastSlack, 'I16: rounding only adds to the slack');
+      lastSlack = s;
+    }
+    // Everyone sells everything: must succeed and leave a non-negative reserve.
+    if (c.sold > 0n) c.sell(c.sold);
+    assert.ok(c.reserve >= 0n);
   }
 });
 
@@ -160,23 +166,29 @@ test('order independence: deposit order does not change any allocation', () => {
   for (const [addr, c] of forward.claims) assert.deepEqual(reversed.claims.get(addr), c);
 });
 
-test('split neutrality: splitting one deposit into k wallets gains less than k units', () => {
+test('split neutrality: splitting one deposit into k wallets gains less than k token units', () => {
   const others = Array.from({ length: 20 }, (_, i) => [`o${i}`, 2n * NATIVE]);
   for (const k of [2n, 10n, 100n]) {
     const whole = runLobby([['whale', 100n * NATIVE], ...others]);
     const parts = Array.from({ length: Number(k) }, (_, i) => [`split${i}`, (100n * NATIVE) / k]);
     const split = runLobby([...parts, ...others]);
     let splitTokens = 0n;
-    let splitRefund = 0n;
-    for (let i = 0; i < Number(k); i += 1) {
-      splitTokens += split.claims.get(`split${i}`).tokens;
-      splitRefund += split.claims.get(`split${i}`).refund;
-    }
-    const w = whole.claims.get('whale');
-    const dTok = splitTokens > w.tokens ? splitTokens - w.tokens : w.tokens - splitTokens;
-    const dRef = splitRefund > w.refund ? splitRefund - w.refund : w.refund - splitRefund;
-    assert.ok(dTok < k && dRef < k, `k=${k}: only rounding differs`);
+    for (let i = 0; i < Number(k); i += 1) splitTokens += split.claims.get(`split${i}`).tokens;
+    const w = whole.claims.get('whale').tokens;
+    const diff = splitTokens > w ? splitTokens - w : w - splitTokens;
+    assert.ok(diff < k, `k=${k}: only rounding differs`);
   }
+});
+
+test('live projection: shown price equals the settled price for the same pool', () => {
+  const lobby = exampleLobby();
+  lobby.deposit('a', 7n * NATIVE, OPEN);
+  lobby.deposit('b', 13n * NATIVE, OPEN);
+  const shown = projectedPrice(lobby, lobby.total);
+  const r = lobby.settle(AT_SETTLE);
+  assert.equal(shown.tokens, r.X);
+  assert.equal(shown.netPerToken.num, r.N);
+  assert.equal(projectedPrice(lobby, EXAMPLE.minTotal - 1n), null, 'no projection below the minimum');
 });
 
 test('state machine: time windows are disjoint and terminal states are final', () => {
@@ -225,15 +237,15 @@ test('claims: no double withdrawal, re-entrant claim fails, dust sweep only afte
   assert.throws(() => lobby.sweepDust(), /claims outstanding/);
   lobby.claim('b');
   const dust = lobby.sweepDust();
-  assert.ok(dust.token < 2n && dust.native < 2n, 'dust is below participant count');
+  assert.ok(dust.token < 2n && dust.native === 0n, 'only token dust, below participant count');
   assert.equal(lobby.escrowToken, 0n);
   assert.equal(lobby.escrowNative, 0n);
   assert.throws(() => lobby.sweepDust(), /already swept/);
 });
 
 test('granularity guard: settlement refuses a lobby where a valid deposit would get zero tokens', () => {
-  // Pathological parameters: a 1-unit Lobby supply against many deposits.
-  const lobby = exampleLobby({ lobbySupply: 1n });
+  // Pathological parameters: a curve with almost no tokens.
+  const lobby = exampleLobby({ t0: 40n, curveSupply: 20n });
   lobby.deposit('a', NATIVE, OPEN);
   lobby.deposit('b', NATIVE, OPEN);
   assert.throws(() => lobby.settle(AT_SETTLE), /granularity/);
@@ -242,11 +254,17 @@ test('granularity guard: settlement refuses a lobby where a valid deposit would 
   assert.equal(lobby.refund('b').refund, NATIVE);
 });
 
-test('lobby cap and minimum deposit are enforced', () => {
-  const lobby = exampleLobby({ maxTotal: 2n * NATIVE });
+test('caps: minimum deposit, lobby total and per-wallet cap are enforced', () => {
+  const lobby = exampleLobby({ maxTotal: 3n * NATIVE, maxPerWallet: 2n * NATIVE });
   assert.throws(() => lobby.deposit('a', EXAMPLE.minDeposit - 1n, OPEN), /minimum/);
   lobby.deposit('a', 2n * NATIVE, OPEN);
-  assert.throws(() => lobby.deposit('b', EXAMPLE.minDeposit, OPEN), /cap/);
+  assert.throws(() => lobby.deposit('a', EXAMPLE.minDeposit, OPEN), /wallet cap/);
+  lobby.deposit('b', NATIVE, OPEN);
+  assert.throws(() => lobby.deposit('c', EXAMPLE.minDeposit, OPEN), /lobby cap/);
+});
+
+test('parameters: a curve supply below t0/2 is rejected', () => {
+  assert.throws(() => exampleLobby({ curveSupply: EXAMPLE.t0 / 2n - 1n }), /curveSupply/);
 });
 
 test('settleMath matches the Lobby object', () => {
@@ -254,4 +272,31 @@ test('settleMath matches the Lobby object', () => {
   lobby.deposit('a', 12n * NATIVE, OPEN);
   const expected = settleMath(lobby, 12n * NATIVE);
   assert.deepEqual(lobby.settle(AT_SETTLE), expected);
+});
+
+test('CurveState: buying then selling the same amount never returns more than was paid', () => {
+  const c = new CurveState({ v: EXAMPLE.v0, t: EXAMPLE.t0 });
+  const next = rng(9);
+  for (let i = 0; i < 500; i += 1) {
+    const dt = randBig(next, 1n, 50_000_000n * TOKEN);
+    const paid = c.buy(dt);
+    assert.ok(c.v * c.t >= c.k, 'product never below k after a buy');
+    const back = c.sell(dt);
+    assert.ok(c.v * c.t >= c.k, 'product never below k after a sell');
+    assert.ok(back <= paid);
+  }
+  assert.ok(c.reserve >= 0n);
+});
+
+test('UI gauge (src/lib/stampede.js) matches the settlement model', () => {
+  assert.equal(STAMPEDE.virtualSol, Number(EXAMPLE.v0 / NATIVE));
+  assert.equal(STAMPEDE.virtualTokens, Number(EXAMPLE.t0 / TOKEN));
+  assert.equal(STAMPEDE.totalSupply, Number(EXAMPLE.totalSupply / TOKEN));
+  assert.equal(STAMPEDE.feeBps, Number(EXAMPLE.feeBps));
+  for (const sol of [1n, 50n, 186n, 10_000n]) {
+    const r = settleMath(EXAMPLE, sol * NATIVE);
+    const ui = projectStampede(Number(sol));
+    const exact = Number(r.X) / Number(TOKEN);
+    assert.ok(Math.abs(ui.tokens - exact) / exact < 1e-9, `tokens at ${sol}`);
+  }
 });

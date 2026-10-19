@@ -9,6 +9,7 @@ import Token from './pages/Token';
 import Create from './pages/Create';
 import Rekt from './pages/Rekt';
 import Takeover from './pages/Takeover';
+import Mirror from './pages/Mirror';
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
             <Route path="/create" element={<Create />} />
             <Route path="/rekt-back" element={<Rekt />} />
             <Route path="/takeover" element={<Takeover />} />
+            <Route path="/mirror" element={<Mirror />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

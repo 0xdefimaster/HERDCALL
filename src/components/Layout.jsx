@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { to: '/create', label: 'Launch' },
   { to: '/takeover', label: 'Takeovers' },
   { to: '/rekt-back', label: 'Rekt-back' },
+  { to: '/mirror', label: 'Mirror' },
   { to: '/how-it-works', label: 'How it works' },
 ];
 

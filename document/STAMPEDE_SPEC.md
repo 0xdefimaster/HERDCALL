@@ -1,17 +1,23 @@
-# Stampede — Teknik Şartname (v0.1, taslak)
+# Stampede — Teknik Şartname (v0.2, taslak)
 
 > Lobby → Stampede açılışının matematiksel ve durum makinesi tanımı.
 > Bu belge **kontrat kodu değildir**; kontrat yazılmadan önce kabul edilmesi gereken davranışı tanımlar.
 > Referans model ve otomatik testler: [`sim/stampede.js`](../sim/stampede.js), [`sim/stampede.test.js`](../sim/stampede.test.js).
 > Çalıştırmak için: `npm run test:sim` (testler), `npm run sim` (senaryo tabloları).
 
+**v0.2'deki değişiklik:** v0.1'de Lobby curve'ün sabit bir dilimini ($S_L$) ilk dilimin ortalama fiyatından
+satıyordu. Simülasyon, gerçekçi talepte paranın %90'ından fazlasının iade edildiğini ve karşılanmayan talebin
+curve'ün ilk bloklarına yığıldığını gösterdi. v0.2'de **üst sınır yoktur**: Lobby belirli bir süre açık kalır,
+toplanan havuz süre bitince **tek bir alım** yapar, herkes yatırdığıyla orantılı token alır ve **herkes curve'ün
+açıldığı fiyattan** girer. İade yoktur (yalnızca boş Lobby'de). Reddedilen alternatif §9.2'de.
+
 ---
 
 ## 0. Kapsam
 
-- **Kapsamda:** Lobby'nin açılması, yatırma, kapanış, tek fiyatlı settlement, tahsis ve iade, iptal,
-  claim/refund, yuvarlama tozları, curve'ün başlangıç durumu.
-- **Kapsam dışı:** Curve açıldıktan sonraki işlemler, breakout, Bonded Creator kasası, Rekt-back.
+- **Kapsamda:** Lobby'nin açılması, yatırma, kapanış, tek fiyatlı settlement, tahsis, iptal, claim/refund,
+  yuvarlama tozları, curve'ün settlement sonrası başlangıç durumu ve ödeme gücü (solvency).
+- **Kapsam dışı:** Curve açıldıktan sonraki ücretler, breakout, Bonded Creator kasası, Rekt-back.
   Bunlar ayrı şartnamelerde tanımlanacak.
 - **Zincirden bağımsız:** Tutarlar zincirin native varlığında (SOL ya da ETH) ve en küçük biriminde
   (lamport / wei) tam sayı olarak ifade edilir. Token tutarları da en küçük biriminde tam sayıdır.
@@ -21,46 +27,46 @@
 
 | Sembol | Anlamı | Örnek değer (simülasyon) |
 |---|---|---|
-| $V_0$ | Curve'ün sanal native rezervi | 30 native |
-| $T_0$ | Curve'ün sanal token rezervi | 1.073.000.000 token |
-| $S_{curve}$ | Curve üzerinden satılabilecek toplam arz | 800.000.000 token |
-| $S_L$ | Lobby'ye ayrılan **azami** token miktarı ($0 < S_L \le S_{curve}$) | 150.000.000 token |
+| $V_0$ | Curve'ün başlangıç sanal native rezervi | 30 native |
+| $T_0$ | Curve'ün başlangıç sanal token rezervi | 1.073.000.000 token |
+| $S_{total}$ | Token'ın toplam arzı (mcap hesabı için) | 1.000.000.000 token |
+| $S_{curve}$ | Curve üzerinden satılabilecek arz; **şart: $S_{curve} \ge T_0/2$** | 800.000.000 token |
 | $f$ | İşlem ücreti, baz puan (bps) | 100 (= %1) |
 | $B$ | Baz puan paydası | 10.000 |
-| $d_{min}$ | Tek bir yatırma işleminin alt sınırı | 0,01 native |
+| $d_{min}$ | Tek bir yatırmanın alt sınırı | 0,01 native |
 | $D_{min}$ | Settlement için toplam talep alt sınırı | 0,1 native |
 | $D_{max}$ | Lobby'nin toplam talep üst sınırı | 10.000 native |
-| $t_{close}$ | Lobby'nin kapanış zamanı | açılış + 15/30/60 sn |
+| $w_{max}$ | Cüzdan başı üst sınır (0 = yok) | 0 |
+| $t_{close}$ | Lobby'nin kapanış zamanı (geri sayımın sonu) | açılış + 15/30/60 sn |
 | $t_{deadline}$ | Settlement için son an ($t_{close} < t_{deadline}$) | $t_{close}$ + 300 sn |
 | $d_i$ | $i$ adresinin toplam yatırdığı native (aynı adresin yatırmaları toplanır) | — |
-| $D$ | Toplam yatırılan native, $D = \sum_i d_i$ | — |
+| $D$ | Havuz: toplam yatırılan native, $D = \sum_i d_i$ | — |
 | $n$ | Yatırma yapmış farklı adres sayısı | — |
 
 Token 6, native 9 ondalık basamakla modellenmiştir.
 
 ## 2. Bonding curve
 
-Sanal rezervli sabit çarpım eğrisi kullanılır: $k = V_0 \cdot T_0$.
+Sanal rezervli sabit çarpım eğrisi kullanılır. Curve'ün durumu $(v, t, k, R, s)$:
+$v$ ve $t$ sanal rezervler, $k$ çarpım sabiti, $R$ curve'ün gerçekten tuttuğu native (rezerv),
+$s$ curve'den çıkmış ve dolaşımdaki token miktarıdır. **Spot fiyat** $p = v / t$'dir.
 
-**Rezerv fonksiyonu.** Curve'den $x$ token satıldığında curve'ün tutması gereken **net** native miktarı:
+**Alım ve satım** (yuvarlama her zaman protokol lehine):
 
-$$C(x) = \left\lceil \frac{V_0 \cdot x}{T_0 - x} \right\rceil, \qquad 0 \le x < T_0$$
+$$\text{alım}(\Delta) = \left\lceil \frac{k}{t - \Delta} \right\rceil - v, \qquad
+\text{satım}(\Delta) = v - \left\lceil \frac{k}{t + \Delta} \right\rceil$$
 
-Yukarı yuvarlama protokol lehinedir: rezerv hiçbir zaman gereğinden az olmaz.
+Alımda $v$ ve $R$ ödenen tutar kadar artar, $t$ azalır; satımda tersi. Bu yuvarlama ile her işlemden sonra
+$v \cdot t \ge k$ kalır (test: `CurveState`, `solvency`).
 
-**Ters fonksiyon.** $n$ net native ile alınabilecek en büyük token miktarı:
+**Lobby öncesi durum:** $v = V_0$, $t = T_0$, $k = V_0 T_0$, $R = 0$, $s = 0$.
 
-$$x_{max}(n) = \left\lfloor \frac{T_0 \cdot n}{V_0 + n} \right\rfloor$$
+**Lobby sonrası durum (yeniden çapalama).** Settlement, curve'ü Lobby'nin ödediği fiyattan açar (§4.4):
 
-**İspat (maksimallik).** $x = x_{max}(n)$ için $x(V_0+n) \le T_0 n \Rightarrow V_0 x \le n(T_0-x)
-\Rightarrow C(x) \le n$. $x+1 > T_0 n / (V_0+n)$ olduğundan $V_0(x+1)/(T_0-x-1) > n$, dolayısıyla
-$C(x+1) > n$. Test: `curve: costOf / maxTokensFor are exact inverses at the boundary` (2.000 rastgele bütçe).
+$$v_1 = V_0 + N, \quad t_1 = T_0 - X, \quad k_1 = v_1 t_1, \quad R_1 = N, \quad s_1 = X$$
 
-**Spot (marjinal) fiyat.** $x$ token satıldıktan sonraki anlık fiyat: $p_{spot}(x) = \dfrac{V_0 T_0}{(T_0-x)^2}$.
-
-**Başlangıç durumu.** Lobby'den önce curve boştur: satılan $= 0$, rezerv $= 0$.
-Settlement sonrası curve **satılan $= X$, rezerv $= C(X)$** durumundan açılır (§4).
-Curve'ün değişmezi: **rezerv $\ge C(\text{satılan})$**; settlement'ta bu eşitlikle sağlanır.
+$k_1 > V_0 T_0$ olur; curve Lobby'den sonra yeni çarpım sabitiyle devam eder. Bu bilinçli bir tasarımdır ve
+ödeme gücü §4.6'da ispatlanır.
 
 ## 3. Durum makinesi
 
@@ -78,232 +84,238 @@ Curve'ün değişmezi: **rezerv $\ge C(\text{satılan})$**; settlement'ta bu eş
 |---|---|---|
 | **Open** | Lobby oluşturulunca; $now < t_{close}$ | `deposit` |
 | **Settling** | Zamanla, $t_{close} \le now$ ve henüz nihai durum yok | `settle` (yalnızca $now < t_{deadline}$), `cancel` (yalnızca $now \ge t_{deadline}$) |
-| **Settled** | `settle` başarıyla çalışınca (nihai) | `claim`, `sweepDust` |
+| **Settled** | `settle` başarıyla çalışınca (nihai) | `claim`, `sweepDust`, curve işlemleri |
 | **Cancelled** | `cancel` çalışınca (nihai) | `refund` |
 
 **Yarış koşulunun önlenmesi.**
 1. `settle` ve `cancel` için zaman pencereleri **ayrıktır**: settle $[t_{close}, t_{deadline})$, cancel $[t_{deadline}, \infty)$.
-   Aynı anda ikisinin de geçerli olduğu bir an yoktur.
-2. Her ikisi de nihai durum yokken çalışabilir ve nihai durumu **tek bir atomik adımda** yazar.
+2. İkisi de nihai durum yokken çalışabilir ve nihai durumu **tek bir atomik adımda** yazar.
    Settled bir Lobby iptal edilemez, Cancelled bir Lobby settle edilemez.
-3. İadeler (`refund`) yalnızca **Cancelled** durumunda açılır; önce durum kalıcı olarak Cancelled'a geçer, sonra iade talep edilir.
-4. Open süresince **çekme (withdraw) yoktur.** Son saniyede sahte talep gösterip çekme oyununu engeller.
+3. İadeler (`refund`) yalnızca **Cancelled** durumunda açılır.
+4. Open süresince **çekme (withdraw) yoktur.** Sahte talep gösterip son anda çekme oyununu engeller.
    Fonlar yine de kilitli kalmaz: settle edilmezse $t_{deadline}$ sonrası herkes iptal edip tam iade alabilir.
-5. `settle` ve `cancel` **izinsizdir** (herkes çağırabilir). Settle'ı çağıranı ödüllendiren küçük bir
-   "keeper" teşviki açık sorudur (§11).
+5. `settle` ve `cancel` **izinsizdir** (herkes çağırabilir).
+6. Curve, Lobby Settled olmadan **işleme açılmaz**. Settlement ile curve'ün açılışı aynı atomik adımdır.
 
-Zaman damgası notu: Blok zamanı birkaç saniye oynayabilir. $t_{deadline} - t_{close}$ bu sapmadan çok büyük
-seçilmelidir (örnekte 300 sn). Testler: `state machine: time windows are disjoint and terminal states are final`.
+Zaman damgası notu: Blok zamanı birkaç saniye oynayabilir; $t_{deadline} - t_{close}$ bu sapmadan çok büyük
+seçilmelidir (örnekte 300 sn). Test: `state machine`.
 
-**Settling ara durumu hakkında.** EVM'de settlement tek işlemde atomiktir ve Settling yalnızca zamanla
-belirlenen bir aşamadır. Hesap sınırları nedeniyle settlement birden fazla işleme bölünmek zorunda kalırsa
-(Solana'da olabilir), Settling **saklanan** bir durum olur ve şu kural eklenir: Settling başladıktan sonra
-`cancel` yalnızca Settling yarım kaldıysa ve ayrı, daha uzun bir süre geçtiyse çalışır; yarım kalan adımlar
-fonlara dokunmaz, fon hareketleri son adımda tek seferde yapılır.
+**Settling ara durumu.** EVM'de settlement tek işlemde atomiktir; Settling yalnızca zamanla belirlenen bir
+aşamadır. Solana'da hesap sınırları nedeniyle birden fazla işleme bölünmesi gerekirse Settling saklanan bir
+durum olur: yarım kalan adımlar fonlara dokunmaz, tüm fon hareketleri son adımda tek seferde yapılır ve
+`cancel` yalnızca Settling ayrı, daha uzun bir süre yarım kaldıysa çalışır.
 
 ## 4. Settlement hesabı
 
-`settle()` yalnızca toplamlarla çalışır ve şu değerleri hesaplar:
+`settle()` yalnızca toplamlarla çalışır ve katılımcılar üzerinde döngü yapmaz.
 
-**4.1 Boş ya da yetersiz talep.** $D < D_{min}$ ise: $X = 0$, hiçbir fon curve'e gitmez, ücret alınmaz,
-$E = D$ (tamamı iade). Lobby yine **Settled** olur (iptal değil) ve curve başlangıç durumundan açılır.
-Test: `zero and below-minimum demand`.
+**4.1 Boş ya da yetersiz talep.** $D < D_{min}$ ise (ya da hesaplanan $X = 0$ ise): hiçbir fon curve'e gitmez,
+ücret alınmaz, herkes yatırdığının **tamamını** geri alır. Lobby yine **Settled** olur ve curve Lobby öncesi
+durumdan açılır. Test: `zero and below-minimum demand`.
 
-**4.2 Ücret ve net bütçe.** Ücret yalnızca **harcanan** miktardan alınır; iade edilen native'den ücret alınmaz.
-Curve'e gidebilecek azami net miktar:
+**4.2 Ücret ve net tutar.** Havuzun tamamı harcanır; iade yoktur:
 
-$$N_{max} = \left\lfloor \frac{D \cdot (B - f)}{B} \right\rfloor$$
+$$N = \left\lfloor \frac{D \cdot (B - f)}{B} \right\rfloor, \qquad F = D - N$$
 
-**4.3 Satılan miktar.**
+$N$ token alımına (curve rezervine), $F$ ücret yönlendiricisine gider (HERDCALL.md §5 dağılımı).
+Ücret hiçbir zaman curve rezervinden düşülmez.
 
-$$X = \min\big(S_L,\ x_{max}(N_{max})\big)$$
+**4.3 Lobby'nin aldığı token miktarı.** Hedef: herkes **curve'ün açılacağı fiyattan** girsin. Yani Lobby'nin
+birim fiyatı $N/X$, yeniden çapalanmış curve'ün spot fiyatına eşit olmalı:
 
-- **Fazla talep** ($x_{max}(N_{max}) \ge S_L$, yani yaklaşık $D \ge C(S_L)/(1-f)$): $X = S_L$.
-- **Eksik talep**: $X = x_{max}(N_{max}) < S_L$ ve $X$ bütçeyle alınabilecek en büyük miktardır: $C(X+1) > N_{max}$.
+$$\frac{N}{X} = \frac{V_0 + N}{T_0 - X} \;\Longrightarrow\; X(V_0 + 2N) = N\,T_0 \;\Longrightarrow\;
+X = \left\lfloor \frac{N \cdot T_0}{V_0 + 2N} \right\rfloor$$
 
-**4.4 Fon dağılımı.**
+**Sonuçlar:**
+- $X < T_0/2$ her zaman (talep sonsuza giderken $X \to T_0/2$). Bu yüzden Lobby hiçbir zaman curve'ü
+  tüketemez; $S_{curve} \ge T_0/2$ şartıyla curve'ün satacak arzı her zaman kalır. Lobby oluşturulurken bu
+  şart kontrol edilir. Test: `parameters`.
+- Üst sınır olmadığı için **iade yoktur**: Her native token alır. Test: `settlement: no refunds`.
 
-| Değer | Formül | Gider |
-|---|---|---|
-| $U$ | $C(X)$ | Curve rezervi (net) |
-| $G$ | $\lceil U \cdot B / (B - f) \rceil$ | Harcanan brüt native |
-| $F$ | $G - U$ | Ücret → ücret yönlendiricisi (HERDCALL.md §5 dağılımı) |
-| $E$ | $D - G$ | İade havuzu (katılımcılara orantılı) |
+**4.4 Fiyat sürekliliği (yuvarlama sınırı).** $X$ aşağı yuvarlandığı için Lobby'nin net birim fiyatı curve'ün
+açılış spot fiyatından en fazla bir yuvarlama adımı kadar yüksektir; asla düşük değildir:
 
-**İspat ($G \le D$).** $U \le N_{max} \le D(B-f)/B \Rightarrow U \cdot B/(B-f) \le D$; $D$ tam sayı olduğundan
-$\lceil U B/(B-f) \rceil \le D$. Ücretler hiçbir zaman curve rezervinden düşülmez: rezerv tam olarak $C(X)$'tir.
+$$0 \;\le\; N \cdot t_1 - X \cdot v_1 \;<\; V_0 + 2N$$
+
+İspat: $N t_1 - X v_1 = N(T_0 - X) - X(V_0 + N) = N T_0 - X(V_0 + 2N)$. $X$'in tanımı gereği bu değer
+$\ge 0$ ve $X$'e bir eklendiğinde negatife düşer, dolayısıyla $< V_0 + 2N$. Test: I11.
 
 **4.5 Tahsis tanecikliği koruması.** Geçerli her yatırmanın ($d_i \ge d_{min}$) en az 1 token birimi alması için
-settlement şunu şart koşar:
+settlement $X \cdot d_{min} \ge D$ şartını arar. Sağlanmazsa `settle` geri döner; $t_{deadline}$ sonrası Lobby
+iptal edilir ve herkes tam iade alır. Örnek parametrelerde $D = D_{max}$ iken bile 1 lamport ≈ 54 token birimi
+alır; koruma yalnızca hatalı parametrelere karşı bir emniyettir. Test: `granularity guard`.
 
-$$X \cdot d_{min} \ge D$$
+**4.6 Ödeme gücü (solvency) ispatı.** Curve'ün her an, dolaşımdaki **tüm** tokenler geri satılsa bile
+ödeme yapabilmesi gerekir. Tüm $s$ token geri satıldığında sanal token rezervi $t + s$'ye döner ve ödeme:
 
-Sağlanmazsa `settle` geri döner (revert). $t_{deadline}$ geçince Lobby iptal edilir ve herkes tam iade alır.
-Makul parametrelerde bu koşul fiilen hep sağlanır: örnek parametrelerde en kötü durumda ($D = D_{max}$,
-tamamen dolu Lobby) bile 1 lamport ≥ 15 token birimi alır, $d_{min}$ ise $10^7$ lamport'tur.
-Koruma, hatalı parametrelere karşı bir emniyettir. Test: `granularity guard`.
+$$P_{sell\text{-}all} = v - \frac{k}{t + s}$$
 
-**4.6 Atomik fon hareketleri.** Tek adımda: $U$ curve rezervine, $F$ ücret yönlendiricisine, $X$ token
-Lobby escrow'una (claim'ler için); $E$ escrow'da kalır. Curve aynı işlemde **satılan $= X$, rezerv $= U$**
-durumundan işleme açılır.
+Settlement anında $t_1 + s_1 = T_0$ olduğundan $P = v_1 - k_1/T_0 = (V_0 + N)\,X / T_0$. Şart $P \le R_1 = N$:
+
+$$(V_0 + N)\,X \le N\,T_0 \iff X \le \frac{N\,T_0}{V_0 + N}$$
+
+$X = \lfloor N T_0/(V_0 + 2N) \rfloor$ bu sınırın her zaman altındadır. ✓
+
+Settlement sonrası her alım ve satımda $R$ ve $v$ aynı miktarda değişir; yuvarlama protokol lehine olduğundan
+**fazlalık (slack) $= R - P_{sell\text{-}all}$ hiçbir zaman azalmaz.** Fazlalık, breakout'ta DEX'e ek likidite
+olarak taşınır. Test: `solvency` (100 rastgele Lobby × 200 rastgele işlem, ardından herkesin tamamını satması).
+
+**4.7 Atomik fon hareketleri.** Tek adımda: $N$ curve rezervine, $F$ ücret yönlendiricisine, $X$ token Lobby
+escrow'una (claim'ler için); curve $(v_1, t_1, k_1, R_1, s_1)$ durumuyla işleme açılır.
 
 ## 5. Claim ve refund
 
-**5.1 Kişi başı hesap (pull modeli).** Settled durumunda her adres kendi payını kendisi talep eder:
+**5.1 Kişi başı tahsis (pull modeli).** Settled durumunda her adres kendi payını talep eder:
 
-$$q_i = \left\lfloor \frac{d_i \cdot X}{D} \right\rfloor \text{ token}, \qquad r_i = \left\lfloor \frac{d_i \cdot E}{D} \right\rfloor \text{ native iade}$$
+$$q_i = \left\lfloor \frac{d_i \cdot X}{D} \right\rfloor \text{ token}$$
 
-İki değer de yalnızca $d_i$'ye ve toplamlara bağlıdır: **yatırma sırası sonucu değiştirmez.**
-Cancelled durumunda `refund` adresin tüm yatırdığı tutarı ($d_i$) iade eder.
+Boş Lobby'de (§4.1) $q_i = 0$ ve iade $= d_i$. Cancelled durumunda `refund` $d_i$'nin tamamını iade eder.
+Tahsis yalnızca $d_i$'ye ve toplamlara bağlıdır: **yatırma sırası sonucu değiştirmez.**
 
 **5.2 Çift çekim ve yeniden giriş.**
-- Her adres **tek bir kez** çeker: `claim` ya da `refund` ilk çağrıda adresi "çekti" olarak işaretler.
+- Her adres **tek bir kez** çeker; `claim` ya da `refund` ilk çağrıda adresi "çekti" olarak işaretler.
   Durumlar birbirini dışladığı için aynı fon hem iade hem tahsis olarak çekilemez.
-- **Önce etki, sonra transfer** (checks-effects-interactions): işaretleme ve bakiye düşümü transferden önce yapılır.
-  Ek olarak kontratta yeniden giriş kilidi (reentrancy guard) kullanılır.
-- Test: `claims: no double withdrawal, re-entrant claim fails` (transfer sırasında yeniden claim denenir ve reddedilir).
+- **Önce etki, sonra transfer** (checks-effects-interactions) + yeniden giriş kilidi (reentrancy guard).
+- Test: `claims` (transfer sırasında yeniden claim denenir ve reddedilir).
 
-**5.3 Yuvarlama tozları.** Aşağı yuvarlama nedeniyle:
-- Token tozu: $X - \sum q_i < n$ birim
-- Native tozu: $E - \sum r_i < n$ birim
+**5.3 Yuvarlama tozu.** Yalnızca token tozu oluşur: $X - \sum q_i < n$ birim. Native tozu yoktur (havuzun
+tamamı rezerve ve ücrete gider). Toz escrow'da kalır; **tüm katılımcılar çektikten sonra** `sweepDust` ile
+yakılır. Katılımcıların hakkı olan hiçbir tutar zaman aşımıyla süpürülmez.
 
-Tozlar escrow'da kalır. **Tüm katılımcılar çektikten sonra** `sweepDust` ile süpürülür:
-token tozu yakılır, native tozu Rekt-back havuzuna gider (açık soru §11). Tozlar curve rezervine dokunmaz,
-böylece rezerv $= C(X)$ eşitliği bozulmaz. Katılımcıların hakkı olan hiçbir tutar zaman aşımıyla süpürülmez.
+**5.4 Kilitli fon olmaması.** Settled: claim süresiz. Cancelled: refund süresiz. Settle edilmemiş Lobby:
+$t_{deadline}$ sonrası herkes `cancel` çağırabilir. Test: `state machine`, `claims`.
 
-**5.4 Kilitli fon olmaması.**
-- Settled: claim süresizdir.
-- Cancelled: refund süresizdir.
-- Settle edilmemiş Lobby: $t_{deadline}$ sonrası herkes `cancel` çağırabilir.
-Test: `state machine` (iptal sonrası escrow sıfırlanır), `claims` (sweep sonrası escrow sıfırlanır).
+## 6. Fiyat: tek fiyat ve canlı gösterge
 
-## 6. Fiyatın adı ve anlamı
-
-Stampede'de iki farklı fiyat vardır; arayüz ikisini karıştırmamalıdır:
+Stampede'de **tek bir fiyat** vardır:
 
 | Ad | Tanım | Arayüzde |
 |---|---|---|
-| **Stampede fiyatı** (clearing price) | $G / X$: ilk dilimin **ortalama** maliyeti, ücret dahil | "Everyone in this launch paid X per token (incl. 1% fee)." |
-| **Açılış spot fiyatı** | $p_{spot}(X)$: curve açıldığı andaki **marjinal** fiyat | "Curve opens at Y per token." |
+| **Stampede fiyatı** | Net: $N/X$, ücret dahil: $D/X$. Curve'ün açılış spot fiyatına eşittir (§4.4). | "Everyone enters at X mcap. The curve opens at the same price." |
+| **Stampede mcap'i** | Stampede fiyatı $\times S_{total}$ | Lobby sayfasında büyük gösterge |
 
-Artan bir curve'de her zaman $p_{spot}(X) > U/X$ olur. Yani Stampede'e katılanlar, curve açıldığında ilk alım
-yapanlardan daha düşük ortalama fiyat öder; bu tasarım gereğidir ve arayüzde açıkça yazılmalıdır.
-Kullanıcıya "tek fiyat" sözü, **Lobby içindeki herkesin aynı fiyatı ödemesi** anlamına gelir.
-Her katılımcının ödediği birim fiyat, Stampede fiyatından en fazla bir token birimi ve bir native birimi kadarlık
-yuvarlama farkıyla sapar. Test: fuzz testindeki I7 kontrolü.
+- Zilden hemen sonra alım yapan biri, curve'ün yapısı gereği her zaman Lobby fiyatından **biraz daha
+  yüksek** öder (simülasyon §9.5). Yani Lobby fiyatı, o anda kimsenin altına inemeyeceği en düşük fiyattır;
+  ama Lobby'dekiler, zilden sonra gelenlere karşı **büyük bir anlık fark** kazanmaz.
+- **Canlı gösterge (zorunlu):** Havuzdaki toplam herkese açık olduğu için geri sayım boyunca
+  *"Zil şimdi çalsa herkes X mcap'ten girer"* değeri kesin olarak hesaplanır ve gösterilir. Kullanılan fonksiyon
+  settlement ile **aynıdır** (`projectedPrice`), yani gösterilen değer ile gerçekleşen değer aynı havuzda
+  birebir eşittir. Test: `live projection`.
+- Kullanıcı son fiyatı zil çalana kadar kesin bilemez; havuz büyüdükçe fiyat yükselir. Bunun için v1'de
+  $D_{max}$ ve isteğe bağlı $w_{max}$ var; "en fazla şu mcap'e kadar alırım" limiti açık sorudur (§11).
 
 ## 7. Ölçek ve işlem maliyeti
 
-- `settle` katılımcı sayısı üzerinden **döngü yapmaz**; yalnızca $D$, $S_L$ ve curve parametreleriyle sabit
-  sayıda işlem yapar. Katılımcı sayısı settlement maliyetini etkilemez.
-- `deposit`, `claim` ve `refund` her biri **sabit maliyetlidir** ve maliyeti işlemi yapan katılımcı öder.
-  $n$ katılımcılı bir Lobby'de toplam maliyet $n$ ile doğrusal büyür ama tek bir işleme yığılmaz.
+- `settle` katılımcı sayısı üzerinden **döngü yapmaz**; sabit sayıda işlemle $N$, $F$, $X$ ve curve durumunu
+  hesaplar. Katılımcı sayısı settlement maliyetini etkilemez.
+- `deposit`, `claim` ve `refund` her biri **sabit maliyetlidir**; maliyeti işlemi yapan katılımcı öder.
+  Toplam maliyet $n$ ile doğrusal büyür ama tek bir işleme yığılmaz.
 - $d_{min}$, binlerce toz yatırmayla Lobby'yi şişirme (griefing) maliyetini artırır.
 
 ## 8. Invariant'lar ve kabul kriterleri
 
-Her invariant `sim/stampede.test.js` içinde otomatik olarak kontrol edilir. Fuzz testi 300 rastgele Lobby'de
-(1–150 katılımcı, %0–3 ücret, %1–100 Lobby payı, balina senaryoları) bütün invariant'ları sınar.
+Her invariant `sim/stampede.test.js` içinde otomatik kontrol edilir (15 test). Fuzz testi 300 rastgele Lobby'de
+(1–150 katılımcı, %0–3 ücret, balina senaryoları), solvency testi 100 Lobby × 200 rastgele işlemde çalışır.
 
 | # | Invariant | Kabul kriteri | Test |
 |---|---|---|---|
-| I1 | Arz sınırı | $X \le S_L$ | fuzz, undersubscribed |
-| I2 | Curve tutarlılığı | Settlement sonrası rezerv $= C(\text{satılan})$; boş Lobby'de curve'e dokunulmaz | fuzz, zero-demand |
-| I3 | Harcama sınırı | $G = U + F \le D$, $E = D - G \ge 0$; ücret $f$ bps'i aşmaz (1 birim yuvarlama payı) | fuzz, boundary |
+| I1 | Arz sınırı | $X < T_0/2$ ve $X \le S_{curve}$ | fuzz, no refunds |
+| I2 | Yeniden çapalama | Settlement sonrası $v = V_0+N$, $t = T_0-X$, $R = N$, $s = X$; boş Lobby'de curve'e dokunulmaz | fuzz, zero-demand |
+| I3 | Harcama | $N + F = D$; ücret $f$ bps'i aşmaz (1 birim yuvarlama payı) | fuzz |
 | I4 | Token tozu | $\sum q_i \le X$ ve $X - \sum q_i < n$ | fuzz |
-| I5 | Native tozu | $\sum r_i \le E$ ve $E - \sum r_i < n$ | fuzz |
-| I6 | Korunum | $D = U + F + \sum r_i + \text{escrow tozu}$; $X = \sum q_i + \text{escrow token tozu}$ | fuzz |
-| I7 | Tek fiyat | Kimse Stampede fiyatının altında ödemez; fazla ödeme yalnızca yuvarlama kadardır | fuzz |
+| I5 | İade yok | Settle edilmiş, boş olmayan Lobby'de iade $= 0$ | no refunds, fuzz |
+| I6 | Korunum | $D = R + F + \text{ödenen iade} + \text{escrow}$; $X = \sum q_i + \text{escrow token tozu}$ | fuzz |
+| I7 | Tek fiyat | Kimse Lobby fiyatının altında ödemez; fazla ödeme bir token biriminden az | fuzz |
 | I8 | Sıra bağımsızlığı | Yatırma sırası değişince hiçbir tahsis değişmez | order independence |
-| I9 | Bölme nötrlüğü | Bir yatırmayı $k$ cüzdana bölmek toplamda $< k$ birim fark yaratır (yalnızca yuvarlama) | split neutrality |
+| I9 | Bölme nötrlüğü | Bir yatırmayı $k$ cüzdana bölmek toplamda $< k$ birim fark yaratır | split neutrality |
 | I10 | Durum dışlaması | Cancelled settle edilemez; Settled iptal edilemez; pencereler ayrık | state machine |
-| I11 | Maksimallik | Eksik talepte $C(X+1) > N_{max}$ | undersubscribed, curve |
+| I11 | Fiyat sürekliliği | $0 \le N t_1 - X v_1 < V_0 + 2N$; zilden sonraki ilk alım Lobby fiyatının üstünde | fuzz, continuity |
 | I12 | Taneciklik | $d_i \ge d_{min}$ olan herkes $q_i \ge 1$ alır; aksi halde settle reddedilir | fuzz, granularity guard |
-| I13 | Boş Lobby | $D < D_{min}$: $X = 0$, ücret yok, herkese tam iade | zero-demand |
+| I13 | Boş Lobby | $D < D_{min}$: ücret yok, herkese tam iade, curve dokunulmamış | zero-demand |
 | I14 | Tek çekim | Her adres bir kez çeker; transfer sırasındaki yeniden claim reddedilir | claims |
 | I15 | Kilitli fon yok | Tüm claim/refund'lardan ve sweep'ten sonra escrow $= 0$ | state machine, claims |
+| I16 | Ödeme gücü | Fazlalık $\ge 0$ ve hiçbir işlemde azalmaz; $v t \ge k$; herkes her şeyi satabilir | solvency, CurveState |
+| I17 | Canlı gösterge | Gösterilen fiyat/token, aynı havuzda settlement sonucuna birebir eşit | live projection |
+| I18 | Sınırlar | $d_{min}$, $D_{max}$, $w_{max}$ uygulanır; $S_{curve} < T_0/2$ reddedilir | caps, parameters |
 
-Ek doğrulama: Modelde kasıtlı hatalar açıldığında (çift çekim işareti kaldırıldı, $x_{max}$'a +1 eklendi,
-erken iptale izin verildi, $S_L$ sınırı kaldırıldı, iade yukarı yuvarlandı, taneciklik koruması kaldırıldı)
-testlerin her biri en az bir başarısızlıkla hatayı yakaladı.
+**Mutasyon kontrolü:** Modelde kasıtlı olarak 7 hata açıldı: Lobby'nin düz curve'den alması (v0.1/A modeli),
+$X$'in yukarı yuvarlanması, curve'ün yeniden çapalanmaması, satışta kullanıcı lehine yuvarlama, çift çekim
+korumasının kaldırılması, erken iptal ve cüzdan sınırının kaldırılması. Testler 7'sinin hepsini yakaladı.
 
 ## 9. Simülasyon sonuçları
 
 `npm run sim` çıktısı (örnek parametreler).
 
-**9.1 Lobby kapasitesi: farklı $S_L$ dilimleri için $C(S_L)$**
+**9.1 Talep senaryoları** (100 eşit katılımcı, %1 ücret, toplam arz 1 milyar)
 
-| $S_L$ (curve arzının %'si) | $S_L$ (M token) | $C(S_L)$ net native | Ortalama fiyat / 1M token | Açılış spot / 1M token |
-|---|---|---|---|---|
-| 10% | 80 | 2,417 | 0,0302 | 0,0326 |
-| 20% | 160 | 5,257 | 0,0329 | 0,0386 |
-| 30% | 240 | 8,643 | 0,0360 | 0,0464 |
-| 50% | 400 | 17,831 | 0,0446 | 0,0711 |
-| 100% | 800 | 87,912 | 0,1099 | 0,4319 |
+| Havuz D | Lobby tokenleri (M) | Arzın %'si | Lobby mcap (ücret dahil) | Curve açılış mcap | Ücret | İade | Token tozu (birim) | Satış fazlalığı |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 33,2 | 3,3% | 30,1 | 29,8 | 0,01 | 0 | 10 | 0,03 |
+| 5 | 133,1 | 13,3% | 37,6 | 37,2 | 0,05 | 0 | 83 | 0,61 |
+| 20 | 305,3 | 30,5% | 65,5 | 64,9 | 0,20 | 0 | 0 | 5,63 |
+| 50 | 411,7 | 41,2% | 121,4 | 120,2 | 0,50 | 0 | 34 | 18,99 |
+| 100 | 465,9 | 46,6% | 214,6 | 212,5 | 1,00 | 0 | 42 | 42,99 |
+| 186 | 496,1 | 49,6% | 374,9 | 371,2 | 1,86 | 0 | 46 | 85,13 |
+| 500 | 520,7 | 52,1% | 960,2 | 950,6 | 5,00 | 0 | 94 | 240,22 |
+| 1.000 | 528,5 | 52,8% | 1.892,2 | 1.873,3 | 10,00 | 0 | 32 | 487,61 |
+| 10.000 | 535,7 | 53,6% | 18.667,6 | 18.480,9 | 100,00 | 0 | 58 | 4.942,51 |
 
-**9.2 Talep senaryoları** ($S_L$ = 150M token, %1 ücret, 100 eşit katılımcı)
+Mcap'ler native cinsindendir. Lobby mcap'i ile açılış mcap'i arasındaki fark yalnızca %1 ücrettir.
+"Satış fazlalığı", tüm tokenler geri satılsa bile curve'de kalacak native'dir.
 
-| Toplam D | Durum | X (M token) | $S_L$'nin %'si | U → curve | F ücret | İade | İade % | Stampede fiyatı / 1M | Açılış spot / 1M | Toz (token / native birim) |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 0 | boş | 0 | 0% | 0 | 0 | 0 | — | — | 0,0280 | 0 / 0 |
-| 0,05 | boş | 0 | 0% | 0 | 0 | 0,050 | 100% | — | 0,0280 | 0 / 0 |
-| 1 | eksik talep | 34,28 | 22,9% | 0,990 | 0,010 | 0 | 0% | 0,0292 | 0,0298 | 67 / 0 |
-| 3 | eksik talep | 96,66 | 64,4% | 2,970 | 0,030 | 0 | 0% | 0,0310 | 0,0338 | 28 / 0 |
-| 4,926 | fazla talep (sınır) | 150 | 100% | 4,875 | 0,049 | 0,001 | 0% | 0,0328 | 0,0378 | 0 / 87 |
-| 10 | fazla talep | 150 | 100% | 4,875 | 0,049 | 5,075 | 50,8% | 0,0328 | 0,0378 | 0 / 87 |
-| 186,4 | fazla talep | 150 | 100% | 4,875 | 0,049 | 181,475 | 97,4% | 0,0328 | 0,0378 | 0 / 87 |
-| 1.000 | fazla talep | 150 | 100% | 4,875 | 0,049 | 995,075 | 99,5% | 0,0328 | 0,0378 | 0 / 87 |
+**9.2 Reddedilen alternatif (v0.1 / A modeli): havuz düz curve'den alır**
 
-**9.3 Balina ve küçük katılımcılar** (20 native toplam): balina (10 native) ve 99 küçük katılımcı (her biri 0,101)
-1M token başına **aynı fiyatı (0,0328)** öder; tahsis ve iade yatırılan tutarla orantılıdır.
+| Havuz D | A: havuzun mcap'i | A: curve'ün açıldığı mcap | A: anlık fark | A: iade | **v0.2: herkesin ve curve'ün mcap'i** |
+|---|---|---|---|---|---|
+| 5 | 32,6 | 37,9 | 1,2x | 0 | 37,2 |
+| 20 | 46,4 | 77,0 | 1,7x | 0 | 64,9 |
+| 50 | 74,1 | 196,3 | 2,7x | 0 | 120,2 |
+| 100 | 109,9 | anında breakout | — | 11,09 | 212,5 |
+| 186 | 109,9 | anında breakout | — | 96,23 | 371,2 |
 
-**9.4 Cüzdan bölme:** 100 native'i 1 / 10 / 100 / 1.000 cüzdana bölmek toplam tahsisi yalnızca 0 / 7 / 57 / 857
-token birimi (1 token = 1.000.000 birim) ve 0 / 7 / 47 / 847 lamport **azaltır**. Bölmek avantaj sağlamaz, sadece
-yuvarlama kaybettirir.
+A modelinde zil çaldığı an Lobby'deki herkes büyük bir kâğıt kârla başlar ve zilden sonra gelenlere satar;
+sniper sorunu çözülmez, Lobby'deki herkes sniper olur. Talep curve'ü aşınca iade de gerekir.
+v0.2'de bu fark yoktur ve iade hiç gerekmez.
 
-### ⚠️ En önemli bulgu: Lobby kapasitesi
+**9.3 Balina ve küçük katılımcılar** (20 native havuz): balina (10 native) ve 99 küçük katılımcı
+(her biri ≈ 0,10) 1M token başına **aynı fiyatı (0,0655)** öder.
 
-Pump.fun benzeri curve parametreleriyle ilk 150M token yalnızca **~4,9 native** eder. Gerçekçi bir talepte
-(örneğin 186 native) talebin **%97'si iade edilir.** Karşılanmayan talep curve açıldığı anda ilk bloklara
-yönelir; yani sniper rekabeti **Lobby'den curve'ün ilk bloklarına taşınır.** Stampede, açılış adaletini ancak
-Lobby talebin büyük kısmını karşılayabildiğinde sağlar.
+**9.4 Cüzdan bölme:** 100 native'i 1 / 10 / 100 / 1.000 cüzdana bölmek toplam tahsisi bu örnekte **hiç
+değiştirmez** (345.791.015.625.000 birim). Genel sınır: fark $< k$ birim (I9).
 
-Karar verilmesi gereken seçenekler (kontrat yazılmadan önce):
-1. **$S_L$'yi büyütmek** (örneğin curve arzının %50–100'ü). %100'de Lobby tüm curve'ü tek fiyattan doldurabilir;
-   talep $C(S_{curve})$'u aşarsa token doğrudan breakout'a gider ve fiyat keşfi DEX'e kayar.
-2. **Curve parametrelerini değiştirmek** (daha büyük $V_0$): aynı arz için daha yüksek kapasite, daha yüksek başlangıç fiyatı.
-3. **Dinamik $S_L$**: Lobby talebe göre curve'ün ne kadarını tek fiyattan dolduracağını kendisi belirler;
-   üst sınır $S_{curve}$ olur. Bu, seçenek 1'in sınırsız hâlidir.
-
-Hangisinin seçileceği gerçek talep dağılımı verisi olmadan kesinleşmemeli; simülasyon parametreleri buna göre
-genişletilecek.
+**9.5 Zilden hemen sonra** (50 native havuz): Lobby 1M token başına 0,1202 öder. Zilden sonraki ilk alıcı 1M
+token için 0,1204 (+%0,2), 10M için 0,1221 (+%1,5), 50M için 0,1301 (+%8,2) öder. Lobby fiyatının altına
+inmek mümkün değildir, ama zilden sonra gelenler de Lobby'ye göre büyük bir dezavantajla başlamaz.
 
 ## 10. Saldırı senaryoları
 
 | Senaryo | Sonuç | Savunma |
 |---|---|---|
-| Sniper ilk bloğa girmeye çalışır (Lobby içinde) | Avantaj yok; tahsis sıradan bağımsız | Tek fiyat + orantılı tahsis (I7, I8) |
-| Sniper curve açıldığı ilk bloğa yüklenir | **Hâlâ mümkün**; avantajı Lobby kapasitesine bağlı | §9 kapasite kararı; azalan anti-snipe ücreti ayrı deney (§11) |
-| Cüzdanı bölüp daha fazla tahsis almak | Avantaj yok, yuvarlama kaybettirir | Orantılı tahsis (I9) |
-| Son saniyede yatırma | Avantaj yok; zaman ağırlığı yok | Sıra bağımsızlığı |
+| Lobby içinde ilk olmaya çalışmak | Avantaj yok; tahsis sıradan bağımsız | Tek fiyat + orantılı tahsis (I7, I8) |
+| Zilden sonra ilk bloğa yüklenmek | Ucuz pencere yok; ilk alım Lobby fiyatının üstünde başlar | Fiyat sürekliliği (I11) |
+| Zilde ucuz alıp hemen satmak (A modelindeki flip) | Büyük anlık fark yok; yalnızca normal curve hareketi | Yeniden çapalanmış curve |
+| Cüzdanı bölüp fazla tahsis almak | Avantaj yok | Orantılı tahsis (I9) |
+| Son saniyede büyük yatırma (balina) | Herkesin fiyatı yükselir; balina da aynı fiyatı öder, kâr edemez | Canlı gösterge, $D_{max}$, $w_{max}$; v2'de limit fiyat (§11) |
 | Sahte talep gösterip son anda çekmek | Mümkün değil | Open süresince çekme yok |
-| Settle'ı hiç çağırmamak (griefing) | Fonlar kilitlenmez | İzinsiz settle; $t_{deadline}$ sonrası izinsiz cancel |
-| Settle ile iptali yarıştırmak | Mümkün değil | Ayrık zaman pencereleri, tek atomik nihai durum (I10) |
+| Settle'ı çağırmamak (griefing) | Fonlar kilitlenmez | İzinsiz settle; $t_{deadline}$ sonrası izinsiz cancel |
+| Settle ile iptali yarıştırmak | Mümkün değil | Ayrık pencereler, tek atomik nihai durum (I10) |
 | Çift çekim / yeniden giriş | Reddedilir | Tek çekim işareti, CEI, reentrancy guard (I14) |
-| Binlerce toz yatırma | Pahalı, settle'ı etkilemez | $d_{min}$; settle'da döngü yok |
-| Yuvarlamadan kazanç | Mümkün değil | Her yuvarlama protokol/escrow lehine; tozlar sınırlı (I4, I5) |
-| Hatalı parametrelerle sıfır tahsis | Settle reddedilir, iptal + tam iade | Taneciklik koruması (I12) |
-| Blok zamanı oynatma | Pencere kenarlarında birkaç saniye | $t_{deadline} - t_{close}$ çok büyük seçilir |
+| Toplu satışla curve'ü boşaltmak | Herkes satabilir, curve ödeme gücünü korur | Solvency ispatı ve fazlalık (I16) |
+| Yuvarlamadan kazanç | Mümkün değil | Tüm yuvarlamalar protokol/escrow lehine (I4, I16) |
+| Hatalı parametrelerle sıfır tahsis | Settle reddedilir, iptal + tam iade | Taneciklik koruması (I12), $S_{curve} \ge T_0/2$ (I18) |
 
 ## 11. Açık sorular ve deneyler
 
-- **Lobby kapasitesi** (§9): $S_L$ büyüklüğü, $V_0$/$T_0$ ya da dinamik $S_L$. **En öncelikli karar.**
+- **Limit fiyat (v2 adayı):** Kullanıcı "en fazla şu mcap'e kadar alırım" der; zilde fiyat bunu aşarsa o yatırma
+  dışarıda kalır ve iade edilir. Fiyat havuzla birlikte arttığı için bu bir sabit nokta hesabıdır (limitlere göre
+  sıralama gerekir). Zincir üstünde döngüsüz yapılabilmesi için önerilen yol: sıralamayı zincir dışında yapıp
+  sonucu zincirde doğrulamak. Ayrı inceleme gerekir.
+- **$D_{max}$ ve $w_{max}$ değerleri.** GIWA seçilirse Verified Address ile **kişi başı** tavan mümkün olur.
 - **Pencere süreleri:** 15/30/60 sn Lobby, settle penceresi (örnekte 300 sn).
-- **$d_{min}$, $D_{min}$, $D_{max}$** değerleri; $D_{max}$'ın kişi başı mı toplam mı olacağı.
-  GIWA seçilirse Verified Address ile **kişi başı** tavan mümkün olur (sybil'e karşı gerçek koruma).
-- **Keeper teşviki:** Settle'ı çağırana küçük bir ödül verilmeli mi, verilirse ücretten mi alınmalı?
-- **Toz hedefi:** Token tozu yakılsın mı, native tozu Rekt-back'e mi gitsin?
-- **Creator'ın Lobby'ye katılımı:** Creator diğerleriyle aynı fiyattan katılabilir; Bonded tahsisatından ayrı tutulmalı.
-- **Deney (çekirdeğe dahil değil): Curve açılışında zamanla azalan anti-snipe ücreti.** Yüksek ilk ücret normal
-  kullanıcıları da etkiler ve botun ücreti ödemesini engellemez. Ayrı bir simülasyonla, Lobby kapasitesi
-  seçenekleriyle karşılaştırılarak değerlendirilecek.
+- **$d_{min}$ ve $D_{min}$** değerleri.
+- **Breakout tanımı:** Breakout, curve'den satılan token miktarı $S_{curve}$'a ulaşınca olur (SOL hedefine göre değil);
+  satış fazlalığı DEX'e ek likidite olarak taşınır. Ayrı şartnamede tanımlanacak.
+- **Keeper teşviki:** Settle'ı çağırana küçük bir ödül verilmeli mi?
+- **Creator'ın Lobby'ye katılımı:** Diğerleriyle aynı fiyattan katılabilir; Bonded tahsisatından ayrı tutulmalı.
+- **Deney (çekirdeğe dahil değil):** Curve açılışında zamanla azalan anti-snipe ücreti. v0.2'de zilden sonra ucuz
+  pencere kalmadığı için ihtiyaç büyük ölçüde azaldı; yine de ayrı simülasyonla değerlendirilebilir.
