@@ -28,6 +28,7 @@ Tasarım kanvası (landing + uygulama ekranları): https://claude.ai/artifact/SW
 
 **Karar verilenler**
 - İsim ve marka: HerdCall, piksel boğa maskotu, İngilizce / global.
+- **Zincir: Solana.** DEX: Meteora DAMM v2. Çekirdek matematik Rust'ta yazıldı (`programs/herdcall-core`).
 - Lobby → Stampede → Curve → Breakout yaşam döngüsü (batch auction ile anti-sniper).
 - **Stampede modeli (STAMPEDE_SPEC v0.2):** Lobby havuzu zilde tek alım yapar, herkes yatırdığı oranda token alır
   ve herkes curve'ün açıldığı fiyattan girer. Üst sınır yok, iade yok; curve aynı fiyattan açılır.
@@ -78,7 +79,7 @@ Hedef "güvenli" değil, **adil** bir oyun: kaybedebilirsin ama hilesiz kaybeder
 
 > **Tasarım ilkesi (v1):** Cezalandırmak yerine ihlali baştan imkânsız kılmak. Creator'ın **taahhüt ettiği token
 > tahsisatı** bir vesting kasasında (vault) kilitlenir ve takvime göre serbest bırakılır. Creator'ın cüzdanlarının
-> tamamı dondurulmaz: bu, o cüzdanlardaki başka varlıkları etkiler ve entegrasyonları bozabilir. Solana seçilirse
+> tamamı dondurulmaz: bu, o cüzdanlardaki başka varlıkları etkiler ve entegrasyonları bozabilir. Solana'da
 > Token-2022 Transfer Hook kullanımı her transferde ek program mantığı çalıştırır ve gerekli hesapları sağlayamayan
 > cüzdan/uygulamalarda transfer başarısız olur; bu yüzden v1'de varsayılan çözüm kasadır, hook ayrıca test edilir.
 > Teminat yalnızca **zincir üstünde kanıtlanabilen** koşullarda kesilir. Cüzdan analizi (Fair Score kümeleri)
@@ -394,6 +395,12 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
   taşır, fazla LP tokenini yakar, Meteora DAMM v2 pozisyonunu kalıcı kilitler; pozisyon NFT'si programın hesabında durur (CURVE_SPEC §5). Mint / freeze yetkisi token oluşturulurken kaldırılır.
 - `herd_vault` + `builders_fund`: protokol payının kasaları (token öncesi birikim).
 
+**Kod yapısı ve araç zinciri**
+- `programs/herdcall-core`: saf Rust, tam sayı ve taşma kontrollü aritmetik. Programdaki tüm hesaplar buradan gelir.
+- `programs/herdcall` (sıradaki): Anchor programı; hesap yapıları, talimatlar, Meteora DAMM v2 çağrıları.
+- Programı derlemek ve yerel olarak test etmek için Solana CLI, `cargo build-sbf` ve Anchor gerekir. Bulut ortamında
+  bunların indirilmesi için ağ ayarlarında `release.anza.xyz` ve `github.com` alan adlarına izin verilmeli.
+
 **Program yükseltme politikası (karar: yükseltilebilir)**
 
 Yükseltilebilir bir program hataların düzeltilmesine izin verir, ama yükseltme anahtarı aynı zamanda bir rug vektörüdür:
@@ -422,7 +429,12 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
      ve iade yok; formül, ödeme gücü ispatı ve testler şartnamede.
    - ✅ **Curve + Breakout şartnamesi v0.1** ([`CURVE_SPEC.md`](CURVE_SPEC.md)): işlemler, ücret dağıtımı, token miktarıyla
      breakout, curve fiyatından DEX'e geçiş; referans model ve testler.
-   - ⏳ Zincir seçimi; ardından test ağında kontrat ve aynı invariant testleri.
+   - ✅ **Zincir: Solana** (GIWA elendi).
+   - ✅ **Çekirdek matematik Rust'ta** ([`programs/herdcall-core`](../programs/herdcall-core)): Stampede settlement, curve,
+     ücretler, "tut, kazan", breakout. Solana bağımlılığı yok; program ve araçlar aynı kodu kullanacak. JS referans
+     modelinden üretilen test vektörleriyle birebir aynı sonucu verir (`npm run vectors`, `npm run test:core`).
+   - ⏳ Anchor programı (hesaplar, talimatlar, Meteora DAMM v2 entegrasyonu) ve test ağında aynı invariant testleri.
+     Solana araç zinciri gerekiyor (§12).
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
    açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda. İsteğe bağlı **Creator Bounty** (§4).
 3. **Şeffaflık ve keşif deneyimi:** Gerçek token verileri, işlem geçmişi, creator geçmişi, token yetkileri ve
@@ -449,7 +461,7 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
 - **Limit fiyat (v2 adayı):** "En fazla şu mcap'e kadar alırım" emri (STAMPEDE_SPEC §11).
 - Curve: kilitli Meteora pozisyonunun ücret dağıtımı (%25 likiditeye önerisi, kalanı?), geçiş ücreti, breakout'a ulaşmayan tokendeki Stampede fazlalığı, program yükseltme yetkisi (CURVE_SPEC §10). ✅ Karar verilen: $T_0$ = 1 milyar, Meteora DAMM v2, LP kalıcı kilit.
 - Create fee miktarı
-- Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$ (GIWA seçilirse kişi başı tavan)
+- Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı
 - Operasyon tabanının aylık tutarı
 - Rekt Mining: operasyon tabanı tutarı, claim süresi ve alım penceresi, alım havuzunun derinliği ve kayma toleransı, ödül $HERD'üne vesting, MEV/sandwich koruması

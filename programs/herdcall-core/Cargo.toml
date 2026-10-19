@@ -1,0 +1,12 @@
+[package]
+name = "herdcall-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core math of the HerdCall launchpad program: Stampede settlement, bonding curve, fees, breakout"
+license = "MIT"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+serde_json = "1"

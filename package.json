@@ -16,7 +16,9 @@
     "test:sim": "node --test sim/stampede.test.js sim/rekt-mining.test.js sim/curve.test.js",
     "sim:rekt": "node sim/rekt-run.js",
     "test:mirror": "node --test src/lib/mirror.test.js",
-    "sim:curve": "node sim/curve-run.js"
+    "sim:curve": "node sim/curve-run.js",
+    "vectors": "node sim/vectors.js",
+    "test:core": "cd programs/herdcall-core && cargo test"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0",
