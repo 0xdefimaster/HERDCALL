@@ -1,4 +1,4 @@
-# Curve ve Breakout — Teknik Şartname (v0.1, taslak)
+# Curve ve Breakout — Teknik Şartname (v0.1)
 
 > Stampede'den sonra curve üzerindeki alım-satımın, ücretlerin ve Breakout'un (DEX'e geçiş) matematiksel tanımı.
 > Bu belge **kontrat kodu değildir**; kontrat yazılmadan önce kabul edilmesi gereken davranışı tanımlar.
@@ -13,6 +13,7 @@
   $T_0 \le S_{curve} + S_{LP}$; LP'ye gerekmeyen token yakılır (§5.5).
 - **Ücret rezerve girmez.** Curve'ün ödeme gücü (her holder'ın her an satabilmesi) ücretlerden etkilenmez (§3.5).
 - **Yönetici yok.** Kimse işlemleri durduramaz, rezervi çekemez; breakout'u herkes çağırabilir (§5.4).
+- ✅ **Kararlar:** $T_0 = 1$ milyar; DEX **Meteora DAMM v2**; LP **kalıcı kilit** (yakılmaz, §5.4).
 
 ---
 
@@ -37,9 +38,8 @@
 | $f$ | İşlem ücreti (bps) | 100 (= %1) |
 | $m$ | Breakout'u çağırana ödenen geçiş ücreti (havuz kurulum masrafları) | 0,02 native |
 
-**Stampede şartnamesiyle ilişki:** Stampede örnekleri $T_0 = 1{,}073$ milyar ile hesaplandı (pump.fun benzeri). Bu
-şartname $T_0 = S_{total} = 1$ milyar önerir (§5.5). Stampede formülleri değişmez; yalnızca o belgedeki tablolar yeni
-$T_0$ ile güncellenmelidir (§10).
+**Stampede şartnamesiyle ilişki:** $T_0 = S_{total} = 1$ milyar kabul edildi (§5.5). Stampede formülleri aynıdır; o
+belgedeki tablolar bu değerle güncellendi.
 
 ## 2. Curve durumu ve değişmezler
 
@@ -119,7 +119,11 @@ Bu bilinçli bir sonuçtur: Lobby fiyatı yükseldikçe curve'ün tamamı ölçe
 3. Curve'ün son fiyatı: $p^* = v / t$.
 4. LP tokeni: $L_{tok} = \min\left(S_{LP},\ \lfloor L_{SOL} \cdot t / v \rfloor\right)$.
 5. Kalan $S_{LP} - L_{tok}$ token **yakılır**.
-6. DEX havuzu $L_{SOL}$ ve $L_{tok}$ ile kurulur; LP payı kalıcı olarak kilitlenir ya da yakılır (DEX'e göre, §10).
+6. **Meteora DAMM v2** havuzu $L_{SOL}$ ve $L_{tok}$ ile kurulur ve pozisyon **kalıcı olarak kilitlenir**. Kilitli
+   likidite hiçbir zaman çekilemez ama işlem ücreti kazanmaya devam eder; ücretler ayrıca toplanabilir. Pozisyonu
+   temsil eden NFT bir kişide değil, HerdCall programının hesabında (PDA) durur; ücretleri yalnızca program kurallarına
+   göre toplayıp dağıtabilir (§10). **Neden yakılmıyor:** LP'yi yakmak da likiditeyi kilitler, ama ücret hakkını da
+   sonsuza kadar yok eder.
 7. Durum **Migrated** olur. Curve bir daha açılmaz.
 
 Mint ve freeze yetkileri breakout'ta değil, **token oluşturulurken** kaldırılır; arz baştan sabittir (§6).
@@ -248,12 +252,12 @@ yaratır; v0.1 bunun yerine yakmayı seçer.
 
 ## 10. Açık sorular
 
-- **DEX seçimi** (Raydium CPMM, Meteora DAMM v2 vb.), LP payının kilitlenmesi mi yakılması mı, DEX ücretinin bir kısmının
-  LP'ye geri eklenmesi (HERDCALL.md §3, öneri %25).
+- ✅ **DEX:** Meteora DAMM v2; LP kalıcı kilit. **Açık:** kilitli pozisyonun ücretleri nasıl dağıtılacak? HERDCALL.md §3
+  önerisi: %25'i likiditeye geri eklenir (DAMM v2'de ücretler kendiliğinden eklenmez; program toplar, likidite olarak
+  ekler ve onu da kilitler). Kalan %75 için seçenekler: holder'lar, creator, protokol, Rekt-back havuzu.
+- **Havuz ayarları:** DAMM v2 havuz ücret oranı ve ücretin hangi tokenden toplanacağı (yalnızca SOL ya da iki token).
 - **Geçiş ücreti $m$**: gerçek havuz kurulum maliyetine göre.
 - **Breakout'a ulaşmayan token'daki Stampede fazlalığı** (§5.6): curve'de mi kalsın, belirli bir süre işlem görmeyen
   tokenlerde holder'lara mı dağıtılsın? Dağıtım, ölü token tanımı ve Diamond Hooves ile birlikte düşünülmeli.
-- **$T_0$ uyumu:** Stampede şartnamesinin tabloları $T_0 = 1{,}073$ milyar ile; bu şartname 1 milyar öneriyor. Karar
-  verilince Stampede tabloları güncellenecek.
 - **Program yükseltme yetkisi:** Kontrat değiştirilemez mi olacak, zaman kilitli bir çoklu imza mı?
 - **Kayma varsayılanları ve MEV koruması** (ayrı şartname).

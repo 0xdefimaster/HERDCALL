@@ -28,7 +28,7 @@ açıldığı fiyattan** girer. İade yoktur (yalnızca boş Lobby'de). Reddedil
 | Sembol | Anlamı | Örnek değer (simülasyon) |
 |---|---|---|
 | $V_0$ | Curve'ün başlangıç sanal native rezervi | 30 native |
-| $T_0$ | Curve'ün başlangıç sanal token rezervi | 1.073.000.000 token |
+| $T_0$ | Curve'ün başlangıç sanal token rezervi (CURVE_SPEC: $T_0 \le S_{curve} + S_{LP}$) | 1.000.000.000 token |
 | $S_{total}$ | Token'ın toplam arzı (mcap hesabı için) | 1.000.000.000 token |
 | $S_{curve}$ | Curve üzerinden satılabilecek arz; **şart: $S_{curve} \ge T_0/2$** | 800.000.000 token |
 | $f$ | İşlem ücreti, baz puan (bps) | 100 (= %1) |
@@ -246,45 +246,45 @@ korumasının kaldırılması, erken iptal ve cüzdan sınırının kaldırılma
 
 `npm run sim` çıktısı (örnek parametreler).
 
-**9.1 Talep senaryoları** (100 eşit katılımcı, %1 ücret, toplam arz 1 milyar)
+**9.1 Talep senaryoları** (100 eşit katılımcı, %1 ücret, toplam arz 1 milyar, $T_0$ = 1 milyar)
 
 | Havuz D | Lobby tokenleri (M) | Arzın %'si | Lobby mcap (ücret dahil) | Curve açılış mcap | Ücret | İade | Token tozu (birim) | Satış fazlalığı |
 |---|---|---|---|---|---|---|---|---|
-| 1 | 33,2 | 3,3% | 30,1 | 29,8 | 0,01 | 0 | 10 | 0,03 |
-| 5 | 133,1 | 13,3% | 37,6 | 37,2 | 0,05 | 0 | 83 | 0,61 |
-| 20 | 305,3 | 30,5% | 65,5 | 64,9 | 0,20 | 0 | 0 | 5,63 |
-| 50 | 411,7 | 41,2% | 121,4 | 120,2 | 0,50 | 0 | 34 | 18,99 |
-| 100 | 465,9 | 46,6% | 214,6 | 212,5 | 1,00 | 0 | 42 | 42,99 |
-| 186 | 496,1 | 49,6% | 374,9 | 371,2 | 1,86 | 0 | 46 | 85,13 |
-| 500 | 520,7 | 52,1% | 960,2 | 950,6 | 5,00 | 0 | 94 | 240,22 |
-| 1.000 | 528,5 | 52,8% | 1.892,2 | 1.873,3 | 10,00 | 0 | 32 | 487,61 |
-| 10.000 | 535,7 | 53,6% | 18.667,6 | 18.480,9 | 100,00 | 0 | 58 | 4.942,51 |
+| 1 | 31,0 | 3,1% | 32,3 | 32,0 | 0,01 | 0 | 18 | 0,03 |
+| 5 | 124,1 | 12,4% | 40,3 | 39,9 | 0,05 | 0 | 39 | 0,61 |
+| 20 | 284,5 | 28,4% | 70,3 | 69,6 | 0,20 | 0 | 89 | 5,63 |
+| 50 | 383,7 | 38,4% | 130,3 | 129,0 | 0,50 | 0 | 58 | 18,99 |
+| 100 | 434,2 | 43,4% | 230,3 | 228,0 | 1,00 | 0 | 89 | 42,99 |
+| 186 | 462,3 | 46,2% | 402,3 | 398,3 | 1,86 | 0 | 11 | 85,13 |
+| 500 | 485,3 | 48,5% | 1.030,3 | 1.020,0 | 5,00 | 0 | 58 | 240,22 |
+| 1.000 | 492,5 | 49,3% | 2.030,3 | 2.010,0 | 10,00 | 0 | 35 | 487,61 |
+| 10.000 | 499,2 | 49,9% | 20.030,3 | 19.830,0 | 100,00 | 0 | 57 | 4.942,51 |
 
 Mcap'ler native cinsindendir. Lobby mcap'i ile açılış mcap'i arasındaki fark yalnızca %1 ücrettir.
-"Satış fazlalığı", tüm tokenler geri satılsa bile curve'de kalacak native'dir.
+"Satış fazlalığı", tüm tokenler geri satılsa bile curve'de kalacak native'dir ($N^2/(V_0+2N)$; CURVE_SPEC §5.6).
 
 **9.2 Reddedilen alternatif (v0.1 / A modeli): havuz düz curve'den alır**
 
 | Havuz D | A: havuzun mcap'i | A: curve'ün açıldığı mcap | A: anlık fark | A: iade | **v0.2: herkesin ve curve'ün mcap'i** |
 |---|---|---|---|---|---|
-| 5 | 32,6 | 37,9 | 1,2x | 0 | 37,2 |
-| 20 | 46,4 | 77,0 | 1,7x | 0 | 64,9 |
-| 50 | 74,1 | 196,3 | 2,7x | 0 | 120,2 |
-| 100 | 109,9 | anında breakout | — | 11,09 | 212,5 |
-| 186 | 109,9 | anında breakout | — | 96,23 | 371,2 |
+| 5 | 35,0 | 40,7 | 1,2x | 0 | 39,9 |
+| 20 | 49,8 | 82,7 | 1,7x | 0 | 69,6 |
+| 50 | 79,5 | 210,7 | 2,6x | 0 | 129,0 |
+| 100 | 129,0 | 554,7 | 4,3x | 0 | 228,0 |
+| 186 | 150,0 | anında breakout | — | 64,14 | 398,3 |
 
 A modelinde zil çaldığı an Lobby'deki herkes büyük bir kâğıt kârla başlar ve zilden sonra gelenlere satar;
 sniper sorunu çözülmez, Lobby'deki herkes sniper olur. Talep curve'ü aşınca iade de gerekir.
 v0.2'de bu fark yoktur ve iade hiç gerekmez.
 
 **9.3 Balina ve küçük katılımcılar** (20 native havuz): balina (10 native) ve 99 küçük katılımcı
-(her biri ≈ 0,10) 1M token başına **aynı fiyatı (0,0655)** öder.
+(her biri ≈ 0,10) 1M token başına **aynı fiyatı (0,0703)** öder.
 
 **9.4 Cüzdan bölme:** 100 native'i 1 / 10 / 100 / 1.000 cüzdana bölmek toplam tahsisi bu örnekte **hiç
-değiştirmez** (345.791.015.625.000 birim). Genel sınır: fark $< k$ birim (I9).
+değiştirmez** (322.265.625.000.000 birim). Genel sınır: fark $< k$ birim (I9).
 
-**9.5 Zilden hemen sonra** (50 native havuz): Lobby 1M token başına 0,1202 öder. Zilden sonraki ilk alıcı 1M
-token için 0,1204 (+%0,2), 10M için 0,1221 (+%1,5), 50M için 0,1301 (+%8,2) öder. Lobby fiyatının altına
+**9.5 Zilden hemen sonra** (50 native havuz): Lobby 1M token başına 0,1290 öder. Zilden sonraki ilk alıcı 1M
+token için 0,1292 (+%0,2), 10M için 0,1311 (+%1,6), 50M için 0,1404 (+%8,8) öder. Lobby fiyatının altına
 inmek mümkün değildir, ama zilden sonra gelenler de Lobby'ye göre büyük bir dezavantajla başlamaz.
 
 ## 10. Saldırı senaryoları
@@ -314,8 +314,8 @@ inmek mümkün değildir, ama zilden sonra gelenler de Lobby'ye göre büyük bi
 - **Pencere süreleri:** 15/30/60 sn Lobby, settle penceresi (örnekte 300 sn).
 - **$d_{min}$ ve $D_{min}$** değerleri.
 - **Breakout tanımı:** ✅ [`CURVE_SPEC.md`](CURVE_SPEC.md) v0.1'de tanımlandı: curve'den satılan token $S_{curve}$'a
-  ulaşınca (SOL hedefine göre değil); satış fazlalığı DEX'e LP olarak taşınır. O şartname $T_0 = 1$ milyar öneriyor;
-  karar verilirse bu belgedeki tablolar yeni $T_0$ ile güncellenecek.
+  ulaşınca (SOL hedefine göre değil); satış fazlalığı DEX'e LP olarak taşınır. ✅ $T_0 = 1$ milyar kabul edildi;
+  bu belgedeki tablolar buna göre güncellendi.
 - **Keeper teşviki:** Settle'ı çağırana küçük bir ödül verilmeli mi?
 - **Creator'ın Lobby'ye katılımı:** Diğerleriyle aynı fiyattan katılabilir; Bonded tahsisatından ayrı tutulmalı.
 - **Deney (çekirdeğe dahil değil):** Curve açılışında zamanla azalan anti-snipe ücreti. v0.2'de zilden sonra ucuz

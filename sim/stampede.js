@@ -199,7 +199,7 @@ export const TOKEN = 1_000_000n;
 export const NATIVE = 1_000_000_000n;
 export const EXAMPLE = Object.freeze({
   v0: 30n * NATIVE,
-  t0: 1_073_000_000n * TOKEN,
+  t0: 1_000_000_000n * TOKEN,
   totalSupply: 1_000_000_000n * TOKEN,
   curveSupply: 800_000_000n * TOKEN,
   feeBps: 100n,

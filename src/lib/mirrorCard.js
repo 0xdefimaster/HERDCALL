@@ -103,8 +103,8 @@ export async function drawMirrorCard(result, { canvas = document.createElement('
     ctx.strokeStyle = C.orange;
     ctx.strokeRect(left + 2, 488, 722, 88);
     text(ctx, 'ON HERDCALL: ONE PRICE FOR EVERYONE', left + 18, 518, { font: '700 18px Silkscreen', color: C.orange });
-    const gain = result.herd.tokenGain;
-    const gainText = gain == null ? '' : ` · ${gain >= 0 ? '+' : ''}${(gain * 100).toFixed(0)}% tokens for you`;
+    const gain = result.herd.shareGain;
+    const gainText = gain == null ? '' : ` · ${gain >= 0 ? '+' : ''}${(gain * 100).toFixed(0)}% bigger share for you`;
     text(ctx, `est. ${result.herd.mcapSol.toFixed(1)} SOL mcap${gainText}`, left + 18, 562, { font: '40px VT323', color: C.cream });
   }
 

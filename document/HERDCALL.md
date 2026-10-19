@@ -72,7 +72,7 @@ Hedef "güvenli" değil, **adil** bir oyun: kaybedebilirsin ama hilesiz kaybeder
 | **Lobby** | Token oluşturulur, 15 / 30 / 60 sn'lik pencere açılır (dev seçer). Kullanıcılar SOL yatırır, **işlem yoktur**, snipe edilecek bir şey yoktur. |
 | **Stampede** | Sayaç sıfırlanınca havuz **tek bir alım** yapar ve herkes yatırdığı oranda token alır. Herkes **aynı fiyatı** öder: curve'ün açılacağı fiyat. Lobby'ye düşen token $X = N \cdot T_0 / (V_0 + 2N)$ ($N$: ücret sonrası havuz). Talep ne kadar büyük olursa olsun fazlası için **iade yoktur** (yalnızca settle hiç gerçekleşmezse herkes parasını geri çeker); havuz büyüdükçe fiyat yükselir. Geri sayım boyunca "zil şimdi çalsa herkes X mcap'ten girer" canlı gösterilir. |
 | **Curve** | Curve, Stampede fiyatından açılır (yeniden çapalanmış rezervler). Zilden sonra ilk alan biraz daha yüksek öder, ucuz pencere kalmaz. Curve her zaman tüm satışları karşılayacak kadar rezerv tutar (STAMPEDE_SPEC §4). |
-| **Breakout** | Curve'den satılabilecek tokenlerin tamamı (örnekte 800M) satılınca curve kapanır, rezerv ve LP tokenleri DEX'e (Raydium / Meteora) taşınır ve kilitlenir. DEX **curve'ün son fiyatından** açılır, asla altından değil; LP'ye gerekmeyen token yakılır. Breakout'u herkes çağırabilir. Mint ve freeze yetkisi token oluşturulurken kaldırılır. Breakout sonrası DEX havuzu ücretinin bir kısmı (öneri: %25) likiditeye geri eklenir. Ayrıntı: [`CURVE_SPEC.md`](CURVE_SPEC.md). |
+| **Breakout** | Curve'den satılabilecek tokenlerin tamamı (örnekte 800M) satılınca curve kapanır, rezerv ve LP tokenleri **Meteora DAMM v2**'ye taşınır ve pozisyon kalıcı olarak kilitlenir (yakılmaz; kilitli likidite ücret kazanmaya devam eder). DEX **curve'ün son fiyatından** açılır, asla altından değil; LP'ye gerekmeyen token yakılır. Breakout'u herkes çağırabilir. Mint ve freeze yetkisi token oluşturulurken kaldırılır. Breakout sonrası DEX havuzu ücretinin bir kısmı (öneri: %25) likiditeye geri eklenir. Ayrıntı: [`CURVE_SPEC.md`](CURVE_SPEC.md). |
 
 ## 4. Bonded Creator (Bellwether) (ödül, ceza değil)
 
@@ -371,7 +371,7 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 - `diamond_hooves`: haftalık bütçe (protokol gelirinin 1/50'si), Merkle kökü ile hak kazananlar, pull-claim.
 - `cto_proposal` / `cto_vote`: tetikleyici kontrolü, holder oylaması, creator hakkının multisig'e devri.
 - `breakout`: curve'den $S_{curve}$ satılınca herkes çağırabilir; rezervi ve LP tokenlerini curve'ün son fiyatından DEX'e
-  taşır, fazla LP tokenini yakar, LP'yi kilitler (CURVE_SPEC §5). Mint / freeze yetkisi token oluşturulurken kaldırılır.
+  taşır, fazla LP tokenini yakar, Meteora DAMM v2 pozisyonunu kalıcı kilitler; pozisyon NFT'si programın hesabında durur (CURVE_SPEC §5). Mint / freeze yetkisi token oluşturulurken kaldırılır.
 - `herd_vault` + `builders_fund`: protokol payının kasaları (token öncesi birikim).
 
 ## 13. Yol haritası
@@ -411,7 +411,7 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 ## 14. Açık sorular
 
 - **Limit fiyat (v2 adayı):** "En fazla şu mcap'e kadar alırım" emri (STAMPEDE_SPEC §11).
-- Curve parametreleri ($V_0$, $T_0$ = 1 milyar önerisi ve Stampede tablolarının buna göre güncellenmesi), DEX seçimi, geçiş ücreti, breakout'a ulaşmayan tokendeki Stampede fazlalığı (CURVE_SPEC §10)
+- Curve: kilitli Meteora pozisyonunun ücret dağıtımı (%25 likiditeye önerisi, kalanı?), geçiş ücreti, breakout'a ulaşmayan tokendeki Stampede fazlalığı, program yükseltme yetkisi (CURVE_SPEC §10). ✅ Karar verilen: $T_0$ = 1 milyar, Meteora DAMM v2, LP kalıcı kilit.
 - Create fee miktarı
 - Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$ (GIWA seçilirse kişi başı tavan)
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı

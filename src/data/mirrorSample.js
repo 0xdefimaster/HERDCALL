@@ -27,7 +27,7 @@ const BUYS = [
 ];
 
 export function sampleMirror() {
-  let curve = { v: 30, t: 1_073_000_000 };
+  let curve = { v: 30, t: 1_073_000_000 }; // the other platform's curve (pump.fun-like), not HerdCall's
   const launch = 300_000_000;
   const trades = BUYS.map(([slotOffset, who, sol], order) => {
     const wallet = who === 'you' ? SAMPLE_WALLET : fakeAddress(who);

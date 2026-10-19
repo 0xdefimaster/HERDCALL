@@ -43,6 +43,7 @@ test('parseTrades: sells, other mints, failed transactions and legacy account ke
 });
 
 function launch(buys) {
+  // The other platform's curve (pump.fun-like parameters), not HerdCall's.
   let curve = { v: 30, t: 1_073_000_000 };
   return buys.flatMap(([slot, wallet, sol], order) => {
     const r = curveBuyTx({ curve, wallet, sol, slot, signature: `t${order}`, mint: MINT });
@@ -70,7 +71,9 @@ test('analyzeMirror: wallets before you, first block, price multiple and the one
   assert.equal(r.partial, false);
   assert.ok(Math.abs(r.herd.mcapSol - projectStampede(8).mcapSol) < 1e-9);
   assert.ok(Math.abs(r.herd.tokens - projectShare(1, 8)) < 1e-9);
-  assert.ok(r.herd.tokenGain > 0, 'one price gives the late buyer more tokens than the curve did');
+  const avgAll = (r.beforeSol + 1) / r.before.reduce((a, w) => a + w.tokens, r.userBuy.tokens);
+  assert.ok(Math.abs(r.herd.shareGain - (r.userPrice / avgAll - 1)) < 1e-9, 'share gain = your price / everyone\'s average - 1');
+  assert.ok(r.herd.shareGain > 0, 'a late buyer gets a bigger share at one price');
 });
 
 test('analyzeMirror: order inside a slot, first buyer, missing buy, partial window', () => {
