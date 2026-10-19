@@ -74,9 +74,12 @@ export function analyzeMirror({ trades, userTrades, wallet, signaturesBefore = n
   const decodedUntil = ordered[ordered.length - 1].slot;
 
   // One-price counterfactual: everyone who bought up to and including the user's first buy sits in one Lobby.
+  // The share gain compares the user's share of the early buyers' tokens, which does not depend on either
+  // platform's curve parameters: (sol / pool) / (tokens / allTokens) = user price / everyone's average price.
   const pool = beforeSol + first.sol;
   const stampede = projectStampede(pool);
   const herdTokens = projectShare(first.sol, pool);
+  const actualShare = first.tokens / (beforeTokens + first.tokens);
 
   return {
     wallet,
@@ -98,7 +101,7 @@ export function analyzeMirror({ trades, userTrades, wallet, signaturesBefore = n
       pool,
       mcapSol: stampede.mcapSol,
       tokens: herdTokens,
-      tokenGain: first.tokens > 0 ? herdTokens / first.tokens - 1 : null,
+      shareGain: actualShare > 0 ? first.sol / pool / actualShare - 1 : null,
     },
   };
 }

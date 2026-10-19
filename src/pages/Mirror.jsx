@@ -198,7 +198,7 @@ function MirrorResult({ result }) {
     }
   };
   const intent = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
-  const gain = result.herd?.tokenGain;
+  const gain = result.herd?.shareGain;
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
@@ -244,8 +244,8 @@ function MirrorResult({ result }) {
             <strong className="text-hc-cream">{sol(result.herd.mcapSol)} SOL mcap</strong>, the same price, and the curve opens there.
             {gain != null && (
               <>
-                {' '}You would hold <strong className={gain >= 0 ? 'text-hc-up' : 'text-hc-down'}>{gain >= 0 ? '+' : ''}{(gain * 100).toFixed(0)}%</strong>{' '}
-                {gain >= 0 ? 'more' : 'fewer'} tokens for the same SOL.
+                {' '}Your share of what the early herd bought would be <strong className={gain >= 0 ? 'text-hc-up' : 'text-hc-down'}>{gain >= 0 ? '+' : ''}{(gain * 100).toFixed(0)}%</strong>{' '}
+                {gain >= 0 ? 'bigger' : 'smaller'} for the same SOL.
               </>
             )}
           </p>

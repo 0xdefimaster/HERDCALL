@@ -44,8 +44,8 @@ kullanıcıların ödül payını ne kadar azaltıyor?
 
 | Sembol | Anlamı | Simülasyondaki değer |
 |---|---|---|
-| Puan tabanı | Bir işlemin ürettiği **protokol ücreti** (işlem tutarının %0,45'i) | — |
-| $H$ | Sezonda dürüst kullanıcıların ödediği protokol ücreti | 450 SOL (100k SOL hacim) |
+| Puan tabanı | Bir işlemin ürettiği **protokol ücreti** (işlem tutarının bonded tokende %0,30'u, unbonded'da %0,45'i) | — |
+| $H$ | Sezonda dürüst kullanıcıların ödediği protokol ücreti | 450 SOL (100k SOL unbonded hacim; bonded'da 300) |
 | $x$ | Farmcının ödediği protokol ücreti | farmcı seçer |
 | $m_i$ | Pozisyon çarpanı: zarar ($m_r$), tutma ($m_h$), üst sınır ($M$) | §3 |
 | $\bar m$ | Dürüst kullanıcıların taban ağırlıklı ortalama çarpanı | §5.2 |
@@ -58,9 +58,11 @@ kullanıcıların ödül payını ne kadar azaltıyor?
 
 - Kullanıcı puanı: $S_i = \sum_{\text{pozisyon}} \text{protokol ücreti} \times m_{\text{pozisyon}}$.
 - Ödül: $R_i = V_t \cdot S_i / \sum_j S_j$.
-- **Puan tabanı yalnızca protokol payıdır, ücretin tamamı değil.** Creator payı (%0,30) ve arayüz payı (%0,10)
-  farmcının kendi cüzdanlarına dönebilir. Taban tüm ücret olsaydı en ucuz farmcının birim maliyeti
-  1,33'ten 0,60'a düşerdi ve §4'teki marj neredeyse kapanırdı.
+- **Puan tabanı yalnızca protokol payıdır, ücretin tamamı değil.** Creator payı (bonded %0,50, unbonded %0,30) ve
+  arayüz payı (%0,10) farmcının kendi cüzdanlarına dönebilir. Taban tüm ücret olsaydı en ucuz farmcının birim
+  maliyeti 1,33'ten bonded'da 0,40'a, unbonded'da 0,60'a düşerdi ve §4'teki marj kapanırdı. Protokol payıyla
+  ölçüldüğünde iki token türünde de en ucuz farmcının maliyeti **1,33**'tür: creator'a dönen pay arttıkça puan tabanı
+  da aynı oranda küçülür.
 - **Havuz değeri gelirle sınırlı ve SOL cinsinden (v0.1 politikası, §7):**
   $V_t = \min\left(\alpha R_t,\ R_t - R_t/50 - O_t\right)$. $R_t$, sezonun **uygun net protokol geliridir**
   (§7.1; farmcının ödedikleri dahil), $R_t/50$ Diamond Hooves bütçesi, $O_t$ operasyon tabanıdır. Havuz önce SOL olarak
@@ -108,21 +110,21 @@ veya mainnet verisiyle güncellenmeli.
 
 ### 5.1 Farmcının maliyeti (gerçek curve üzerinde)
 
-Stampede sonrası curve (50 SOL Lobby), 200 dürüst işlemlik geçmiş, 5 SOL'lük bacaklar, 300 tekrar.
+Bonded token, Stampede sonrası curve (50 SOL Lobby), 200 dürüst işlemlik geçmiş, 5 SOL'lük bacaklar, 300 tekrar.
 
 | Strateji | 1 SOL taban başına net maliyet | Zararla kapanan pozisyon | Tutma süresince fiyat PnL'i (SOL) |
 |---|---|---|---|
-| S1 al-sat, tek cüzdan | 2,22 | %100 | — |
+| S1 al-sat, tek cüzdan | 3,33 | %100 | — |
 | S1, creator ve arayüz farmcının | **1,33** | %100 | — |
-| S2 iki cüzdan (A alır, B alır, A satar, B satar) | 2,22 | %50 | — |
-| S3 iki cüzdan, 7 gün tutar | 2,37 | %49 | 0,28 ± 1,37 |
-| S3, creator ve arayüz farmcının | 1,48 | %51 | 0,26 ± 1,38 |
-| S4 sandwich (%1 kayma toleransı) | **−3,77** | %0 | — |
+| S2 iki cüzdan (A alır, B alır, A satar, B satar) | 3,33 | %50 | — |
+| S3 iki cüzdan, 7 gün tutar | 3,56 | %49 | 0,28 ± 1,37 |
+| S3, creator ve arayüz farmcının | 1,56 | %51 | 0,26 ± 1,38 |
+| S4 sandwich (%1 kayma toleransı) | **−5,66** | %0 | — |
 
 - Her al-sat turu ücretlerin tamamını öder; curve'de "bedava zarar" yoktur. Ama **zararla kapanmak bedavadır**.
 - 7 gün tutma maliyeti çok az artırır (sermaye maliyeti, yıllık %7). Asıl etkisi, farmı ücretle sınırlı olmaktan
   çıkarıp **sermayeyle sınırlı** hâle getirmesidir: aynı sermaye haftada yalnızca bir tur döner.
-- Sandwich, ödül olmadan da kârlıdır (taban başına 3,77 kazanç). Bu MEV sorunudur, Rekt Mining'in değil. Ayrıca
+- Sandwich, ödül olmadan da kârlıdır (taban başına 5,66 kazanç). Bu MEV sorunudur, Rekt Mining'in değil. Ayrıca
   ele alınmalı (kayma varsayılanları, işlem sıralaması).
 
 ### 5.2 Çarpanlar: dürüst kullanıcı ve farmcı
@@ -333,7 +335,7 @@ $\alpha = 0{,}25$, $O_t = 100$ SOL, claim süresi 2 sezon.
 |---|---|---|
 | Yeni ödül tahsisi | Uygun net sezon gelirinin en fazla %25'i | En kötü durumda marj 0,82 (§5.4) |
 | Gelir kaynağı | Ayrı Rekt Mining gelir payı (Herd Vault'tan ayrı) | §7.1 |
-| Puan tabanı | Yalnızca **tahsil edilmiş** %0,45 protokol ücreti | Creator / arayüz payı farmcıya dönebilir (§2) |
+| Puan tabanı | Yalnızca **tahsil edilmiş** protokol payı (bonded %0,30, unbonded %0,45) | Creator / arayüz payı farmcıya dönebilir (§2) |
 | Zarar çarpanı | 1,5x; yalnızca 7+ gün tutulup zararla kapanan uygun pozisyonlarda | Şartsız çarpan farmcıya bedava (§5.1) |
 | Tutma çarpanı | 1,25x (7+ gün) | |
 | Toplam çarpan tavanı | 2x | Güvenliği belirleyen değer (§5.5) |
@@ -349,7 +351,7 @@ $\alpha = 0{,}25$, $O_t = 100$ SOL, claim süresi 2 sezon.
 
 ### 7.1 Uygun net gelir ve protokol gelirinin sırası
 
-**Uygun net gelir** $R_t$: sezon $t$ içinde **tahsil edilmiş** protokol ücretleri (%0,45 payı), eksi o sezondaki
+**Uygun net gelir** $R_t$: sezon $t$ içinde **tahsil edilmiş** protokol ücretleri (bonded %0,30, unbonded %0,45 payı), eksi o sezondaki
 geri alınan tutarlar (iadeler, başarısız işlemler). Şunlar gelir **sayılmaz**: önceki sezondan kalan SOL,
 talep edilmemiş ya da devreden $HERD, $HERD fiyat artışı, kasa faizi ve iç transferler.
 

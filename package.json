@@ -13,9 +13,10 @@
     "deploy:testnet": "hardhat run scripts/deploy.js --network monadTestnet",
     "node": "hardhat node",
     "sim": "node sim/run.js",
-    "test:sim": "node --test sim/stampede.test.js sim/rekt-mining.test.js",
+    "test:sim": "node --test sim/stampede.test.js sim/rekt-mining.test.js sim/curve.test.js",
     "sim:rekt": "node sim/rekt-run.js",
-    "test:mirror": "node --test src/lib/mirror.test.js"
+    "test:mirror": "node --test src/lib/mirror.test.js",
+    "sim:curve": "node sim/curve-run.js"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0",

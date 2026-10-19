@@ -2,7 +2,7 @@
 // The settlement itself uses the integer model in sim/stampede.js; this mirrors its formula for the live gauge.
 export const STAMPEDE = {
   virtualSol: 30,
-  virtualTokens: 1_073_000_000,
+  virtualTokens: 1_000_000_000,
   totalSupply: 1_000_000_000,
   feeBps: 100,
 };

@@ -14,6 +14,8 @@ Tasarım kanvası (landing + uygulama ekranları): https://claude.ai/artifact/SW
 - Bu doküman: ürün mekanikleri, ücret modeli, gelir dağıtımı, marka.
 - [`STAMPEDE_SPEC.md`](STAMPEDE_SPEC.md): Lobby → Stampede açılışının teknik şartnamesi (formüller, durum makinesi,
   invariant'lar) ve [`sim/`](../sim) altında referans model + otomatik testler (`npm run test:sim`, `npm run sim`).
+- [`CURVE_SPEC.md`](CURVE_SPEC.md): Curve'de alım-satım, ücret dağıtımı ve Breakout (DEX'e geçiş) şartnamesi
+  (`npm run sim:curve`).
 - [`REKT_MINING.md`](REKT_MINING.md): "Kaybetsen bile kazanırsın" sezon puanlarının ekonomik modeli ve farm
   simülasyonu (`npm run sim:rekt`).
 - Tasarım kanvası: Landing, Lobby (çalışan geri sayım), Token sayfası (Fair Score),
@@ -70,7 +72,7 @@ Hedef "güvenli" değil, **adil** bir oyun: kaybedebilirsin ama hilesiz kaybeder
 | **Lobby** | Token oluşturulur, 15 / 30 / 60 sn'lik pencere açılır (dev seçer). Kullanıcılar SOL yatırır, **işlem yoktur**, snipe edilecek bir şey yoktur. |
 | **Stampede** | Sayaç sıfırlanınca havuz **tek bir alım** yapar ve herkes yatırdığı oranda token alır. Herkes **aynı fiyatı** öder: curve'ün açılacağı fiyat. Lobby'ye düşen token $X = N \cdot T_0 / (V_0 + 2N)$ ($N$: ücret sonrası havuz). Talep ne kadar büyük olursa olsun fazlası için **iade yoktur** (yalnızca settle hiç gerçekleşmezse herkes parasını geri çeker); havuz büyüdükçe fiyat yükselir. Geri sayım boyunca "zil şimdi çalsa herkes X mcap'ten girer" canlı gösterilir. |
 | **Curve** | Curve, Stampede fiyatından açılır (yeniden çapalanmış rezervler). Zilden sonra ilk alan biraz daha yüksek öder, ucuz pencere kalmaz. Curve her zaman tüm satışları karşılayacak kadar rezerv tutar (STAMPEDE_SPEC §4). |
-| **Breakout** | Curve dolunca likidite DEX'e (Raydium / Meteora) taşınır ve kilitlenir. Mint ve freeze yetkisi program tarafından **zorunlu** olarak kaldırılır. Breakout sonrası DEX havuzu ücretinin bir kısmı (öneri: %25) likiditeye geri eklenir. |
+| **Breakout** | Curve'den satılabilecek tokenlerin tamamı (örnekte 800M) satılınca curve kapanır, rezerv ve LP tokenleri **Meteora DAMM v2**'ye taşınır ve pozisyon kalıcı olarak kilitlenir (yakılmaz; kilitli likidite ücret kazanmaya devam eder). DEX **curve'ün son fiyatından** açılır, asla altından değil; LP'ye gerekmeyen token yakılır. Breakout'u herkes çağırabilir. Mint ve freeze yetkisi token oluşturulurken kaldırılır. Breakout sonrası DEX havuzu ücretinin bir kısmı (öneri: %25) likiditeye geri eklenir. Ayrıntı: [`CURVE_SPEC.md`](CURVE_SPEC.md). |
 
 ## 4. Bonded Creator (Bellwether) (ödül, ceza değil)
 
@@ -88,7 +90,7 @@ Damgalanmak **isteğe bağlıdır**. Damgasız token da açılabilir ama açık�
 |---|---|---|
 | Teminat (bond) | 2 / 3 / 5 SOL kilit | Yok |
 | Dev payı | 30 / 60 / 90 gün lineer vesting | Vesting yok |
-| Creator fee | **%0.30** | %0.10 |
+| Creator fee | **%0.50** (curve) / Meteora ücretinin **%50**'si (breakout sonrası) | %0.30 / Meteora ücretinin %30'u |
 | Creator escrow | Gelirin %50'si breakout'a / vesting sonuna kadar bekler | Yok |
 | Feed sıralaması | Boost | Standart |
 | Rozet | 🔔 Bellwether | Yok |
@@ -101,7 +103,12 @@ Damgalanmak **isteğe bağlıdır**. Damgasız token da açılabilir ama açık�
 - Escrow zamanla büyüyen ikinci bir teminat gibi çalışır: dev ne kadar başarılıysa,
   dump etmenin bedeli o kadar artar.
 - Creator geliri en fazla **10 cüzdana** bölünebilir (ekip, sanatçı, KOL); hepsi token sayfasında görünür.
-- Piyasa değerine göre kademeli creator fee **kullanılmaz** (pump.fun dersi).
+- Piyasa değerine göre kademeli creator fee **kullanılmaz** (pump.fun dersi): coin büyüdükçe creator'ın payı küçülmez.
+- **Tut, kazan:** Bonded creator'ın ücret payı, tahsisatının kasada hâlâ kilitli duran oranıyla çarpılır. Vesting
+  bitince creator çekmekte serbesttir, ama çektiği oranda payı **kalıcı olarak** düşer; oran yalnızca azalır (çekip
+  satıp geri koymak payı geri getirmez). Kaybedilen pay Rekt-back havuzuna gider. Ölçülen tek şey zincir üstündeki
+  kasa bakiyesidir; başka cüzdanlardan satış cezaya yol açmaz (kanıtlanamaz), Fair Score'da uyarı olarak görünür.
+  Unbonded creator'ın kasası yoktur; payı sabittir.
 
 ### Creator Bounty: creator'ın kendi tahsisatından tutanlara ödül (isteğe bağlı, aşama 2)
 
@@ -123,17 +130,31 @@ bakiyesiyle orantılı, tahsisatımın %20'si." Protokole maliyeti sıfırdır; 
 
 ## 5. Ücret modeli
 
-Curve üzerinde sabit **%1** işlem ücreti. Tüm dağılım program tarafından zorunlu tutulur
+Curve üzerinde sabit **%1** işlem ücreti (pump.fun: %1,25). Tüm dağılım program tarafından zorunlu tutulur
 ve on-chain herkese açıktır.
 
-| | Creator | Arayüz / referans | Rekt-back havuzu | Protokol |
+**Rakip pump.fun, ilke: creator'dan yana olmak.** Her creator en az pump.fun'ın verdiği kadarını (%0,30) alır;
+teminat yatıran (bonded) creator %67 fazlasını (%0,50) alır. Pump.fun'da creator payı piyasa değeri büyüdükçe
+%0,05'e kadar düşer (kaynaklara göre); HerdCall'da düşmez.
+
+| Curve (%1'in dağılımı) | Creator | Arayüz / referans | Rekt-back havuzu | Protokol |
 |---|---|---|---|---|
-| Bonded token | %0.30 | %0.10 | %0.15 | %0.45 |
-| Unbonded token | %0.10 | %0.10 | %0.35 | %0.45 |
+| Bonded token | %0.50 (yarısı escrow'da) | %0.10 | %0.10 | %0.30 |
+| Unbonded token | %0.30 | %0.10 | %0.15 | %0.45 |
+
+**Breakout sonrası** (kilitli Meteora DAMM v2 pozisyonundan toplanan ücretin dağılımı, CURVE_SPEC §5.8):
+
+| | Likiditeye geri | Creator | Rekt-back havuzu | Protokol |
+|---|---|---|---|---|
+| Bonded token | %25 | %50 | %10 | %15 |
+| Unbonded token | %25 | %30 | %15 | %30 |
+
+- Bonded creator'ın iki aşamadaki payı da "tut, kazan" kuralına bağlıdır (§4); kaybedilen pay Rekt-back'e gider.
+- Holder'lara doğrudan ücret dağıtılmaz (menkul kıymet riski, her dağıtımda snapshot); holder'ı koruyan kısım Rekt-back havuzudur.
 
 - **Arayüz / referans payı**: işlemi getiren terminal, Telegram botu ya da referans linki alır
   (Zora ve Clanker'daki model). Terminallerin entegre olması için ekonomik sebep.
-- Unbonded token'lar havuza daha çok öder, çünkü herd daha çok risk taşır.
+- Unbonded token'lar Rekt-back havuzuna daha çok öder, çünkü herd daha çok risk taşır.
 - v1'de Rekt-back ücret payı ayrı bir havuzda birikir; bu havuzun dağıtım kuralları v2 ile birlikte tanımlanacak.
   v1'de holder'lara yalnızca trample'da kesilen teminat ve escrow dağıtılır (§9).
 
@@ -158,7 +179,7 @@ Netleşecek parametreler:
 
 ## 7. Protokol gelirinin dağıtımı
 
-Protokol payından (%0.45) önce **Diamond Hooves bütçesi** (protokol gelirinin 1/50'si, §9) ayrılır,
+Protokol payından (bonded %0.30, unbonded %0.45) önce **Diamond Hooves bütçesi** (protokol gelirinin 1/50'si, §9) ayrılır,
 sonra **operasyon tabanı** dolar (aylık sabit bütçe: RPC, indexer, audit, hukuk), ardından **Rekt Mining payı**
 (gelirin en fazla %25'i, [`REKT_MINING.md`](REKT_MINING.md) §7.1; aşama 5'ten itibaren). Kalan kısım şöyle dağıtılır:
 
@@ -234,8 +255,9 @@ ve fonun yeterliliği öngörülemiyordu. Diamond Hooves'ta şans yoktur; şart�
 - Creator cüzdanları ve kasası hariç.
 
 **Bütçe hacimle orantılı, sabit pay:**
-- Haftalık bütçe = o haftanın **protokol gelirinin 1/50'si** (%2). Protokol payı hacmin %0,45'i olduğu için bütçe
-  hacmin yaklaşık **%0,009'u** eder. Örnek: 100.000$ hacimde protokol 450$ kazanır, bütçe **9$** olur.
+- Haftalık bütçe = o haftanın **protokol gelirinin 1/50'si** (%2). Protokol payı hacmin %0,30'u (bonded) ile %0,45'i
+  (unbonded) arasında olduğu için bütçe hacmin yaklaşık **%0,006–0,009'u** eder. Örnek: 100.000$ unbonded hacimde
+  protokol 450$ kazanır, bütçe **9$** olur; bonded hacimde 300$ ve 6$.
 - Bütçe protokol payından, 50 / 30 / 20 dağılımından önce ayrılır (§7).
 - Program hiçbir zaman protokolün kazandığından fazlasına mal olamaz; zarar etme riski yoktur.
 
@@ -368,8 +390,25 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 - `fee_router`: %1'i §5'teki tabloya göre böler (creator alıcıları en fazla 10 cüzdan, arayüz payı).
 - `diamond_hooves`: haftalık bütçe (protokol gelirinin 1/50'si), Merkle kökü ile hak kazananlar, pull-claim.
 - `cto_proposal` / `cto_vote`: tetikleyici kontrolü, holder oylaması, creator hakkının multisig'e devri.
-- `breakout`: likiditeyi DEX'e taşır, LP'yi kilitler, mint / freeze yetkisini kaldırır.
+- `breakout`: curve'den $S_{curve}$ satılınca herkes çağırabilir; rezervi ve LP tokenlerini curve'ün son fiyatından DEX'e
+  taşır, fazla LP tokenini yakar, Meteora DAMM v2 pozisyonunu kalıcı kilitler; pozisyon NFT'si programın hesabında durur (CURVE_SPEC §5). Mint / freeze yetkisi token oluşturulurken kaldırılır.
 - `herd_vault` + `builders_fund`: protokol payının kasaları (token öncesi birikim).
+
+**Program yükseltme politikası (karar: yükseltilebilir)**
+
+Yükseltilebilir bir program hataların düzeltilmesine izin verir, ama yükseltme anahtarı aynı zamanda bir rug vektörüdür:
+kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
+
+- **Tek anahtar yok:** Yükseltme yetkisi bir çoklu imzada (Squads; öneri 3/5, anahtarlar farklı kişi ve cihazlarda).
+- **Zaman kilidi:** Her yükseltme zincirde ilan edilir ve en erken **72 saat** sonra uygulanabilir. Bu sürede kullanıcılar
+  curve'de satabilir, Lobby'den ve claim'lerden çıkabilir. Kısa yol (acil durum) yok.
+- **Doğrulanabilir derleme:** Her sürüm etiketli bir commit'ten tekrar üretilebilir; program hash'i yayımlanır.
+- **Şeffaflık:** Sitede yükseltme yetkisinin adresi, bekleyen yükseltmeler ve geçmişi gösterilir.
+- **Sınırlar:** Meteora'da kalıcı kilitli likidite Meteora programı tarafından korunur; HerdCall yükseltmesi onu çekemez
+  (pozisyon NFT'si yalnızca ücret toplayabilir). Token'ların mint ve freeze yetkisi oluşturulurken kaldırıldığı için
+  yükseltme yeni token basamaz.
+- **Hedef:** Denetimler ve kararlı bir dönemden sonra yükseltme yetkisini kaldırıp programı değiştirilemez yapmak.
+- **Açık:** Çoklu imza üyeleri, eşik ve değiştirilemez hâle geçiş tarihi.
 
 ## 13. Yol haritası
 
@@ -381,6 +420,8 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
    - ✅ Şartname v0.1 + referans model + otomatik testler.
    - ✅ **Lobby kapasitesi kararı:** model B (STAMPEDE_SPEC v0.2). Havuz curve'ün açılış fiyatından alır, üst sınır
      ve iade yok; formül, ödeme gücü ispatı ve testler şartnamede.
+   - ✅ **Curve + Breakout şartnamesi v0.1** ([`CURVE_SPEC.md`](CURVE_SPEC.md)): işlemler, ücret dağıtımı, token miktarıyla
+     breakout, curve fiyatından DEX'e geçiş; referans model ve testler.
    - ⏳ Zincir seçimi; ardından test ağında kontrat ve aynı invariant testleri.
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
    açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda. İsteğe bağlı **Creator Bounty** (§4).
@@ -406,7 +447,7 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 ## 14. Açık sorular
 
 - **Limit fiyat (v2 adayı):** "En fazla şu mcap'e kadar alırım" emri (STAMPEDE_SPEC §11).
-- Breakout eşiği ve bonding curve parametreleri
+- Curve: kilitli Meteora pozisyonunun ücret dağıtımı (%25 likiditeye önerisi, kalanı?), geçiş ücreti, breakout'a ulaşmayan tokendeki Stampede fazlalığı, program yükseltme yetkisi (CURVE_SPEC §10). ✅ Karar verilen: $T_0$ = 1 milyar, Meteora DAMM v2, LP kalıcı kilit.
 - Create fee miktarı
 - Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$ (GIWA seçilirse kişi başı tavan)
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı
