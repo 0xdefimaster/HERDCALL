@@ -14,6 +14,8 @@ Tasarım kanvası (landing + uygulama ekranları): https://claude.ai/artifact/SW
 - Bu doküman: ürün mekanikleri, ücret modeli, gelir dağıtımı, marka.
 - [`STAMPEDE_SPEC.md`](STAMPEDE_SPEC.md): Lobby → Stampede açılışının teknik şartnamesi (formüller, durum makinesi,
   invariant'lar) ve [`sim/`](../sim) altında referans model + otomatik testler (`npm run test:sim`, `npm run sim`).
+- [`CURVE_SPEC.md`](CURVE_SPEC.md): Curve'de alım-satım, ücret dağıtımı ve Breakout (DEX'e geçiş) şartnamesi
+  (`npm run sim:curve`).
 - [`REKT_MINING.md`](REKT_MINING.md): "Kaybetsen bile kazanırsın" sezon puanlarının ekonomik modeli ve farm
   simülasyonu (`npm run sim:rekt`).
 - Tasarım kanvası: Landing, Lobby (çalışan geri sayım), Token sayfası (Fair Score),
@@ -70,7 +72,7 @@ Hedef "güvenli" değil, **adil** bir oyun: kaybedebilirsin ama hilesiz kaybeder
 | **Lobby** | Token oluşturulur, 15 / 30 / 60 sn'lik pencere açılır (dev seçer). Kullanıcılar SOL yatırır, **işlem yoktur**, snipe edilecek bir şey yoktur. |
 | **Stampede** | Sayaç sıfırlanınca havuz **tek bir alım** yapar ve herkes yatırdığı oranda token alır. Herkes **aynı fiyatı** öder: curve'ün açılacağı fiyat. Lobby'ye düşen token $X = N \cdot T_0 / (V_0 + 2N)$ ($N$: ücret sonrası havuz). Talep ne kadar büyük olursa olsun fazlası için **iade yoktur** (yalnızca settle hiç gerçekleşmezse herkes parasını geri çeker); havuz büyüdükçe fiyat yükselir. Geri sayım boyunca "zil şimdi çalsa herkes X mcap'ten girer" canlı gösterilir. |
 | **Curve** | Curve, Stampede fiyatından açılır (yeniden çapalanmış rezervler). Zilden sonra ilk alan biraz daha yüksek öder, ucuz pencere kalmaz. Curve her zaman tüm satışları karşılayacak kadar rezerv tutar (STAMPEDE_SPEC §4). |
-| **Breakout** | Curve dolunca likidite DEX'e (Raydium / Meteora) taşınır ve kilitlenir. Mint ve freeze yetkisi program tarafından **zorunlu** olarak kaldırılır. Breakout sonrası DEX havuzu ücretinin bir kısmı (öneri: %25) likiditeye geri eklenir. |
+| **Breakout** | Curve'den satılabilecek tokenlerin tamamı (örnekte 800M) satılınca curve kapanır, rezerv ve LP tokenleri DEX'e (Raydium / Meteora) taşınır ve kilitlenir. DEX **curve'ün son fiyatından** açılır, asla altından değil; LP'ye gerekmeyen token yakılır. Breakout'u herkes çağırabilir. Mint ve freeze yetkisi token oluşturulurken kaldırılır. Breakout sonrası DEX havuzu ücretinin bir kısmı (öneri: %25) likiditeye geri eklenir. Ayrıntı: [`CURVE_SPEC.md`](CURVE_SPEC.md). |
 
 ## 4. Bonded Creator (Bellwether) (ödül, ceza değil)
 
@@ -368,7 +370,8 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 - `fee_router`: %1'i §5'teki tabloya göre böler (creator alıcıları en fazla 10 cüzdan, arayüz payı).
 - `diamond_hooves`: haftalık bütçe (protokol gelirinin 1/50'si), Merkle kökü ile hak kazananlar, pull-claim.
 - `cto_proposal` / `cto_vote`: tetikleyici kontrolü, holder oylaması, creator hakkının multisig'e devri.
-- `breakout`: likiditeyi DEX'e taşır, LP'yi kilitler, mint / freeze yetkisini kaldırır.
+- `breakout`: curve'den $S_{curve}$ satılınca herkes çağırabilir; rezervi ve LP tokenlerini curve'ün son fiyatından DEX'e
+  taşır, fazla LP tokenini yakar, LP'yi kilitler (CURVE_SPEC §5). Mint / freeze yetkisi token oluşturulurken kaldırılır.
 - `herd_vault` + `builders_fund`: protokol payının kasaları (token öncesi birikim).
 
 ## 13. Yol haritası
@@ -381,6 +384,8 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
    - ✅ Şartname v0.1 + referans model + otomatik testler.
    - ✅ **Lobby kapasitesi kararı:** model B (STAMPEDE_SPEC v0.2). Havuz curve'ün açılış fiyatından alır, üst sınır
      ve iade yok; formül, ödeme gücü ispatı ve testler şartnamede.
+   - ✅ **Curve + Breakout şartnamesi v0.1** ([`CURVE_SPEC.md`](CURVE_SPEC.md)): işlemler, ücret dağıtımı, token miktarıyla
+     breakout, curve fiyatından DEX'e geçiş; referans model ve testler.
    - ⏳ Zincir seçimi; ardından test ağında kontrat ve aynı invariant testleri.
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
    açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda. İsteğe bağlı **Creator Bounty** (§4).
@@ -406,7 +411,7 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 ## 14. Açık sorular
 
 - **Limit fiyat (v2 adayı):** "En fazla şu mcap'e kadar alırım" emri (STAMPEDE_SPEC §11).
-- Breakout eşiği ve bonding curve parametreleri
+- Curve parametreleri ($V_0$, $T_0$ = 1 milyar önerisi ve Stampede tablolarının buna göre güncellenmesi), DEX seçimi, geçiş ücreti, breakout'a ulaşmayan tokendeki Stampede fazlalığı (CURVE_SPEC §10)
 - Create fee miktarı
 - Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$ (GIWA seçilirse kişi başı tavan)
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı

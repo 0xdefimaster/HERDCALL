@@ -313,8 +313,9 @@ inmek mümkün değildir, ama zilden sonra gelenler de Lobby'ye göre büyük bi
 - **$D_{max}$ ve $w_{max}$ değerleri.** GIWA seçilirse Verified Address ile **kişi başı** tavan mümkün olur.
 - **Pencere süreleri:** 15/30/60 sn Lobby, settle penceresi (örnekte 300 sn).
 - **$d_{min}$ ve $D_{min}$** değerleri.
-- **Breakout tanımı:** Breakout, curve'den satılan token miktarı $S_{curve}$'a ulaşınca olur (SOL hedefine göre değil);
-  satış fazlalığı DEX'e ek likidite olarak taşınır. Ayrı şartnamede tanımlanacak.
+- **Breakout tanımı:** ✅ [`CURVE_SPEC.md`](CURVE_SPEC.md) v0.1'de tanımlandı: curve'den satılan token $S_{curve}$'a
+  ulaşınca (SOL hedefine göre değil); satış fazlalığı DEX'e LP olarak taşınır. O şartname $T_0 = 1$ milyar öneriyor;
+  karar verilirse bu belgedeki tablolar yeni $T_0$ ile güncellenecek.
 - **Keeper teşviki:** Settle'ı çağırana küçük bir ödül verilmeli mi?
 - **Creator'ın Lobby'ye katılımı:** Diğerleriyle aynı fiyattan katılabilir; Bonded tahsisatından ayrı tutulmalı.
 - **Deney (çekirdeğe dahil değil):** Curve açılışında zamanla azalan anti-snipe ücreti. v0.2'de zilden sonra ucuz
