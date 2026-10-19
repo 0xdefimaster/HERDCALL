@@ -40,6 +40,7 @@ Tasarım kanvası (landing + uygulama ekranları): https://claude.ai/artifact/SW
 - Creator / arayüz / Rekt-back / protokol oranları (§5).
 - Creator escrow oranı (%50 önerildi).
 - Breakout sonrası LP'ye geri eklenecek pay (%25 önerildi).
+- Mirror Mode (§10), Herd Caller (§9), Creator Bounty (§4): tasarım notu var, şartname yok.
 
 ---
 
@@ -101,6 +102,24 @@ Damgalanmak **isteğe bağlıdır**. Damgasız token da açılabilir ama açık�
   dump etmenin bedeli o kadar artar.
 - Creator geliri en fazla **10 cüzdana** bölünebilir (ekip, sanatçı, KOL); hepsi token sayfasında görünür.
 - Piyasa değerine göre kademeli creator fee **kullanılmaz** (pump.fun dersi).
+
+### Creator Bounty: creator'ın kendi tahsisatından tutanlara ödül (isteğe bağlı, aşama 2)
+
+Creator, kendi kilitli tahsisatının bir kısmını **tutanlara ödül** olarak ayırabilir. Örnek: "30 gün tutan herkese,
+bakiyesiyle orantılı, tahsisatımın %20'si." Protokole maliyeti sıfırdır; ödül creator'ın kendi token'ından gelir.
+
+- **Kilitli ve geri alınamaz:** Bounty launch anında kasaya kilitlenir. Creator sonradan geri çekemez,
+  değiştiremez, iptal edemez. Creator trample olsa da bounty ödenir.
+- **Hak kazanma:** Pencere boyunca (örneğin launch'tan itibaren 30 gün) tutulan **en düşük bakiye** esas alınır,
+  Rekt-back v1'deki gibi. Pencerenin sonunda alıp payı kapmak işe yaramaz. Creator cüzdanları ve kasalar hariç.
+- **Dağıtım:** En düşük bakiyeyle orantılı. Cüzdanı bölmek avantaj sağlamaz. Liste zincir verisinden hesaplanır,
+  Merkle kökü yazılır, itiraz süresi tanınır, pull-claim ile çekilir.
+- **v1'de yalnızca proje token'ı:** SOL bounty yok. Token'ın değeri sıfıra düşebilir; arayüz bunu "getiri vaadi"
+  olarak değil, "creator'ın kendi tahsisatından tutanlara bonus" olarak gösterir.
+- **Görünürlük:** Token sayfasında ve Lobby'de "Holder bounty: %X, Y gün" etiketi. Fair Score'a sinyal olarak
+  girebilir; ama bounty'nin olmaması ceza değildir.
+- **Etkisi:** Creator'ın satılabilir arzı azalır, topluluğa "uzun vadede buradayım" sinyali verir. Degen için
+  "tutarsan ekstra" kancası.
 
 ## 5. Ücret modeli
 
@@ -266,12 +285,51 @@ Papertrade / EOS betting mining psikolojisi, kayba göre sınırsız token basma
 
 **Hacim XP kazandırmaz** (wash trading farm'ını engellemek için).
 
+### Herd Caller: sonuca dayalı itibar (aşama 3)
+
+Herd Memory'nin degen yüzü. Hacmi değil, **seçimlerin sonucunu** ölçer: hangi Lobby'lere girdin ve o tokenler
+sonra ne yaptı. Örnek kart: *"BELL'i 120 SOL mcap'te çağırdı → 7. günde 40x"*.
+
+- **Neden adil ölçülebilir:** Stampede'de herkes aynı fiyattan girer. İki kişiyi ayıran tek şey seçimdir;
+  erken blok, bot veya sniper avantajı yoktur.
+- **Ölçüm:** Her "çağrı" bir Lobby katılımıdır (en az bir alt eşik, örneğin 0,1 SOL). Sonuç, Stampede fiyatına
+  göre sabit ufuklarda ölçülür (24 saat, 7 gün, 30 gün). Anlık fiyat değil, ufuk etrafındaki **zaman ağırlıklı
+  ortalama fiyat** kullanılır; tek bir anda fiyatı şişirmek skoru değiştirmez.
+- **Skor:** Çağrıların tavanlı getirilerinin ortalaması (tek bir 1000x skoru ele geçirmesin diye üst sınır),
+  isabet oranı ve çağrı sayısı ayrı gösterilir. **Batan tokenler de sayılır**; kayıplar silinmez.
+- **Sıralamaya girme şartı:** En az N çağrı (örneğin 10). Her Lobby'ye en küçük tutarla girmek ortalamayı yükseltmez,
+  çünkü kaybedenler de ortalamaya girer.
+- **Para ödülü yok:** Herd Caller yalnızca itibardır: rozet, sıralama, paylaşılabilir kart. Ekonomik ödül Rekt Mining'de,
+  ayrı kurallarla. Böylece itibarı farm etmek için ekonomik teşvik küçük kalır.
+- **Bilinen sınır:** Biri çok sayıda cüzdanla farklı seçimler yapıp yalnızca şanslı olanı gösterebilir. En az çağrı şartı
+  ve uzun geçmiş bunu zorlaştırır, ortadan kaldırmaz. Kart, cüzdanın tüm çağrı geçmişine bağlantı verir.
+- Creator'ın kendi tokenindeki katılımı çağrı sayılmaz.
+
 ## 10. Dağıtım
 
 - **Trading terminalleri ve Telegram botları** için ilk günden açık IDL / SDK + arayüz payı (§5).
 - KOL cüzdanları token sayfasında etiketlenir.
 - On-chain ve şeffaf referans ücretleri.
 - Önce dar bir nişte hâkimiyet, sonra genişleme.
+
+### Mirror Mode: "sniper seni nasıl yerdi" kartı (zincir dışı, kontrattan önce yapılabilir)
+
+Kullanıcı başka bir launchpad'de aldığı bir token'ı (ya da kendi cüzdanını) girer. Site zincir verisinden şunu çıkarır:
+
+> *"Bu token'da sen girmeden önce ilk blokta 14 cüzdan aldı. Senin ortalama giriş fiyatın onlarınkinin 3 katıydı.
+> HerdCall'da hepsiyle aynı fiyattan girerdin: tahmini Stampede mcap'i 85 SOL."*
+
+- **Tamamen zincir dışı:** Cüzdan bağlamak gerekmez, işlem gönderilmez. Herkese açık zincir verisi (RPC / indexer)
+  okunur. Kontrat ve zincir kararından bağımsızdır; lansmandan önce pazarlama aracı olarak çıkabilir.
+- **Hesap:** "Senden önce giren" = token'ın ilk N slotunda ve kullanıcıdan önce alan cüzdanlar. Kullanıcının giriş fiyatı
+  bu cüzdanların ortalamasıyla karşılaştırılır. "HerdCall'da ne olurdu" kısmı, ilk N slottaki toplam alımı bir Lobby havuzu
+  sayıp Stampede formülüyle (`src/lib/stampede.js`) hesaplanır ve **tahmini** olarak etiketlenir.
+- **Paylaşılabilir kart:** Piksel tema, maskot, tek tıkla X / Telegram paylaşımı. Viral döngü: herkes kendi acısını paylaşır.
+- **Dürüstlük kuralları:**
+  - Cüzdanlara "bot" ya da "dolandırıcı" denmez. Tanım açıktır: "ilk N slotta, senden önce alan cüzdanlar". Adresler kısaltılır.
+  - Rakip platformun logosu ve markası kullanılmaz; yalnızca token adresi ve zincir verisi.
+  - Karşılaştırma bir tahmindir; HerdCall'da kâr edeceğin iddia edilmez.
+- **Uzantı:** Aynı kart, HerdCall'daki bir Stampede için de üretilir: "Bu launch'ta senden önce giren: 0."
 
 ## 11. Marka
 
@@ -319,9 +377,11 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
      ve iade yok; formül, ödeme gücü ispatı ve testler şartnamede.
    - ⏳ Zincir seçimi; ardından test ağında kontrat ve aynı invariant testleri.
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
-   açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda.
+   açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda. İsteğe bağlı **Creator Bounty** (§4).
 3. **Şeffaflık ve keşif deneyimi:** Gerçek token verileri, işlem geçmişi, creator geçmişi, token yetkileri ve
    açıklanabilir Fair Score. Arayüz (Board, token sayfası) mevcut tasarımla gerçek verilere bağlanır.
+   **Herd Caller** sıralaması (§9).
+   - **Mirror Mode** (§10) zincir dışıdır; bu sıradan bağımsız olarak, kontratlardan önce pazarlama aracı olarak çıkabilir.
 4. **Topluluk ve telafi sistemleri:** Community Takeover, Rekt-back v1, Diamond Hooves, ardından Rekt-back v2. Ekonomik
    simülasyonlar, saldırı testleri ve gerekli hukuki inceleme tamamlandıktan sonra.
 5. **Gelir ve yönetişim:** Protokol gelirini gerçek hacimle ölçmek, operasyon bütçesini doğrulamak; ürünün
@@ -346,6 +406,9 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı
 - Operasyon tabanının aylık tutarı
 - Rekt Mining: operasyon tabanı tutarı, claim süresi ve alım penceresi, alım havuzunun derinliği ve kayma toleransı, ödül $HERD'üne vesting, MEV/sandwich koruması
+- Herd Caller: ölçüm ufukları (24 saat / 7 gün / 30 gün), getiri tavanı, en az çağrı sayısı, en küçük çağrı tutarı
+- Creator Bounty: en fazla tahsisat payı, pencere süreleri, Fair Score'a etkisi
+- Mirror Mode: "ilk N slot" tanımı, veri sağlayıcı (RPC / indexer) ve maliyeti
 - Diamond Hooves parametreleri: tutma süresi (7 gün), bütçe oranı (1/50), ölü token eşiği (30 gün), "zararına" tanımı (ortalama alış fiyatı)
 - Trample koşullarının kesin listesi (yalnızca zincir üstünde kanıtlanabilir olanlar)
 - Rekt-back v1 snapshot penceresi (24 saat önerisi) ve itiraz süresi
