@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Card, CardTitle, PixelButton, Tag } from '../components/ui';
 import { SAMPLE_TICKER, sampleMirror } from '../data/mirrorSample';
 import { shareText } from '../lib/mirror';
+import { cardFileName, drawMirrorCard } from '../lib/mirrorCard';
 import { DEFAULT_RPC, LIMITS, runMirror } from '../lib/mirrorRpc';
 import { shortAddress, useWallet } from '../wallet/WalletContext';
 
@@ -168,7 +169,34 @@ function Stat({ label, value, tone = '' }) {
 
 function MirrorResult({ result }) {
   const [copied, setCopied] = useState(false);
+  const [card, setCard] = useState(null); // { url, blob }
   const text = shareText(result, result.ticker);
+
+  useEffect(() => {
+    let cancelled = false;
+    let url = null;
+    drawMirrorCard(result).then((canvas) =>
+      canvas.toBlob((blob) => {
+        if (cancelled || !blob) return;
+        url = URL.createObjectURL(blob);
+        setCard({ url, blob });
+      }, 'image/png'),
+    );
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [result]);
+
+  const file = card && typeof File !== 'undefined' ? new File([card.blob], cardFileName(result), { type: 'image/png' }) : null;
+  const canShareFile = !!(file && navigator.canShare?.({ files: [file] }));
+  const shareImage = async () => {
+    try {
+      await navigator.share({ files: [file], text });
+    } catch {
+      // cancelled or not allowed: nothing to do
+    }
+  };
   const intent = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
   const gain = result.herd?.tokenGain;
   const copy = async () => {
@@ -250,8 +278,25 @@ function MirrorResult({ result }) {
         </div>
       )}
 
+      {card && (
+        <figure className="m-0 flex flex-col gap-2">
+          <img src={card.url} alt={`Mirror card: ${text}`} className="block w-full h-auto border-[3px] border-hc-line" />
+          <figcaption className="text-sm text-hc-muted">Your card. Download it and attach it to your post.</figcaption>
+        </figure>
+      )}
+
       <div className="flex flex-wrap gap-3">
         <PixelButton onClick={() => window.open(intent, '_blank', 'noopener,noreferrer')} className="flex-1">Share on X</PixelButton>
+        {card && (
+          <a
+            href={card.url}
+            download={cardFileName(result)}
+            className="flex-1 inline-flex items-center justify-center min-h-[44px] px-5 border-[3px] bg-transparent text-hc-cream border-hc-cream shadow-px-orange font-pixel font-bold text-[15px] no-underline hover:text-hc-cream"
+          >
+            Download card
+          </a>
+        )}
+        {canShareFile && <PixelButton variant="secondary" onClick={shareImage} className="flex-1">Share image</PixelButton>}
         <PixelButton variant="secondary" onClick={copy} className="flex-1">{copied ? 'Copied' : 'Copy text'}</PixelButton>
       </div>
 
