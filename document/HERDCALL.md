@@ -374,6 +374,22 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
   taşır, fazla LP tokenini yakar, Meteora DAMM v2 pozisyonunu kalıcı kilitler; pozisyon NFT'si programın hesabında durur (CURVE_SPEC §5). Mint / freeze yetkisi token oluşturulurken kaldırılır.
 - `herd_vault` + `builders_fund`: protokol payının kasaları (token öncesi birikim).
 
+**Program yükseltme politikası (karar: yükseltilebilir)**
+
+Yükseltilebilir bir program hataların düzeltilmesine izin verir, ama yükseltme anahtarı aynı zamanda bir rug vektörüdür:
+kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
+
+- **Tek anahtar yok:** Yükseltme yetkisi bir çoklu imzada (Squads; öneri 3/5, anahtarlar farklı kişi ve cihazlarda).
+- **Zaman kilidi:** Her yükseltme zincirde ilan edilir ve en erken **72 saat** sonra uygulanabilir. Bu sürede kullanıcılar
+  curve'de satabilir, Lobby'den ve claim'lerden çıkabilir. Kısa yol (acil durum) yok.
+- **Doğrulanabilir derleme:** Her sürüm etiketli bir commit'ten tekrar üretilebilir; program hash'i yayımlanır.
+- **Şeffaflık:** Sitede yükseltme yetkisinin adresi, bekleyen yükseltmeler ve geçmişi gösterilir.
+- **Sınırlar:** Meteora'da kalıcı kilitli likidite Meteora programı tarafından korunur; HerdCall yükseltmesi onu çekemez
+  (pozisyon NFT'si yalnızca ücret toplayabilir). Token'ların mint ve freeze yetkisi oluşturulurken kaldırıldığı için
+  yükseltme yeni token basamaz.
+- **Hedef:** Denetimler ve kararlı bir dönemden sonra yükseltme yetkisini kaldırıp programı değiştirilemez yapmak.
+- **Açık:** Çoklu imza üyeleri, eşik ve değiştirilemez hâle geçiş tarihi.
+
 ## 13. Yol haritası
 
 Özellikler birbirine bağımlılıklarına göre sıralanır. Bir aşama, başarı kriteri sağlanmadan sonrakine geçilmez.

@@ -12,7 +12,9 @@
 - **DEX, curve'ün son fiyatından açılır; asla altından açılmaz.** Bunun için parametre kuralı
   $T_0 \le S_{curve} + S_{LP}$; LP'ye gerekmeyen token yakılır (§5.5).
 - **Ücret rezerve girmez.** Curve'ün ödeme gücü (her holder'ın her an satabilmesi) ücretlerden etkilenmez (§3.5).
-- **Yönetici yok.** Kimse işlemleri durduramaz, rezervi çekemez; breakout'u herkes çağırabilir (§5.4).
+- **İşlemlerde yönetici yetkisi yok.** Kimse işlemleri durduramaz, rezervi çekemez, ücreti değiştiremez; breakout'u
+  herkes çağırabilir (§5.4). Program **yükseltilebilir**, ama yalnızca çoklu imza ve 72 saatlik zaman kilidiyle
+  (HERDCALL.md §12, program yükseltme politikası).
 - ✅ **Kararlar:** $T_0 = 1$ milyar; DEX **Meteora DAMM v2**; LP **kalıcı kilit** (yakılmaz, §5.4).
 
 ---
@@ -248,7 +250,7 @@ yaratır; v0.1 bunun yerine yakmayı seçer.
 | Sandwich | §8.4. Zararı kullanıcının kayma toleransı sınırlar; tam koruma MEV şartnamesinde. |
 | Kendini arayüz göstermek | Bir trader işlemi kendi arayüz hesabıyla gönderip %0,10'u geri alabilir: etkin ücret %0,9. Bilinen ve kabul edilen durum; Rekt Mining puan tabanı yalnızca protokol payı olduğu için oradaki hesabı değiştirmez. |
 | Yuvarlama istismarı | Tüm yuvarlamalar curve ve ücret lehine; al-sat her zaman zararla kapanır. |
-| Yönetici rug'ı | Yönetici rolü yok: işlem durdurma, rezerv çekme, ücret değiştirme yetkisi yok. Program yükseltme yetkisi ayrı bir karardır (§10). |
+| Yönetici rug'ı | Talimatlarda yönetici rolü yok: işlem durdurma, rezerv çekme, ücret değiştirme yetkisi yok. Program yükseltilebilir; kötü niyetli bir yükseltme rezervlere dokunabilirdi. Savunma: yükseltme yetkisi çoklu imzada, her yükseltme 72 saat önceden zincirde ilan edilir, kullanıcılar bu sürede çıkabilir; Meteora'daki kilitli likidite Meteora programı tarafından korunur ve yükseltmeyle çekilemez (HERDCALL.md §12). |
 
 ## 10. Açık sorular
 
@@ -259,5 +261,6 @@ yaratır; v0.1 bunun yerine yakmayı seçer.
 - **Geçiş ücreti $m$**: gerçek havuz kurulum maliyetine göre.
 - **Breakout'a ulaşmayan token'daki Stampede fazlalığı** (§5.6): curve'de mi kalsın, belirli bir süre işlem görmeyen
   tokenlerde holder'lara mı dağıtılsın? Dağıtım, ölü token tanımı ve Diamond Hooves ile birlikte düşünülmeli.
-- **Program yükseltme yetkisi:** Kontrat değiştirilemez mi olacak, zaman kilitli bir çoklu imza mı?
+- ✅ **Program yükseltme:** Yükseltilebilir; çoklu imza + 72 saat zaman kilidi, doğrulanabilir derleme, hedef: denetim ve
+  kararlı bir dönemden sonra değiştirilemez yapmak (HERDCALL.md §12). **Açık:** çoklu imzanın üyeleri ve eşiği.
 - **Kayma varsayılanları ve MEV koruması** (ayrı şartname).
