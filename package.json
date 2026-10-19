@@ -14,7 +14,8 @@
     "node": "hardhat node",
     "sim": "node sim/run.js",
     "test:sim": "node --test sim/stampede.test.js sim/rekt-mining.test.js",
-    "sim:rekt": "node sim/rekt-run.js"
+    "sim:rekt": "node sim/rekt-run.js",
+    "test:mirror": "node --test src/lib/mirror.test.js"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0",

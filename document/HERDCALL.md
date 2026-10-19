@@ -330,6 +330,10 @@ Kullanıcı başka bir launchpad'de aldığı bir token'ı (ya da kendi cüzdan�
   - Rakip platformun logosu ve markası kullanılmaz; yalnızca token adresi ve zincir verisi.
   - Karşılaştırma bir tahmindir; HerdCall'da kâr edeceğin iddia edilmez.
 - **Uzantı:** Aynı kart, HerdCall'daki bir Stampede için de üretilir: "Bu launch'ta senden önce giren: 0."
+- **Durum:** Sitede `/mirror` sayfası var. Örnek veriyle çalışır; canlı mod zincir verisini ziyaretçinin tarayıcısından
+  herkese açık bir RPC ile okur (geçmişi en fazla 20.000 işlem olan tokenler, ilk 120 işlem çözülür). Kod:
+  `src/lib/mirror.js`, `src/lib/mirrorRpc.js`; testler `npm run test:mirror`. Canlı mod gerçek RPC'ye karşı henüz
+  doğrulanmadı.
 
 ## 11. Marka
 
