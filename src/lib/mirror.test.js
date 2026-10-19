@@ -138,11 +138,11 @@ test('runMirror: end to end against a fake RPC, with a rate-limit retry', async 
   const txs = launchTxs([[100, 'dev', 1], [100, 's1', 2], [101, 's2', 1], [104, 'me', 1]]);
   const { fetchFn, calls } = fakeRpc({ txs });
   const steps = [];
-  const r = await runMirror({ mint: MINT, wallet: 'me', fetchFn, onProgress: (p) => steps.push(p.step) });
+  const r = await runMirror({ mint: MINT, wallet: 'me', fetchFn, sleepFn: async () => {}, onProgress: (p) => steps.push(p.step) });
   assert.equal(r.walletsBefore, 3);
   assert.equal(r.signaturesBefore, 3);
   assert.ok(calls.filter((c) => c === 'getSignaturesForAddress').length >= 2, 'retried after 429');
-  assert.deepEqual([...new Set(steps)], ['signatures', 'early', 'user']);
+  assert.deepEqual([...new Set(steps)], ['signatures', 'user', 'early']);
 });
 
 test('runMirror: finds a late buy through the token account, and refuses tokens too active for the browser', async () => {
@@ -155,13 +155,22 @@ test('runMirror: finds a late buy through the token account, and refuses tokens 
     extraSlot: 200, // 300 transactions between launch and the user's buy: outside the decoded window
     userAccounts: [{ pubkey: 'myAta', sigs: [{ signature: 'mine', slot: 900, err: null }] }],
   });
-  const r = await runMirror({ mint: MINT, wallet: 'me', fetchFn });
+  const r = await runMirror({ mint: MINT, wallet: 'me', fetchFn, sleepFn: async () => {} });
   assert.equal(r.userSlot, 900);
   assert.equal(r.walletsBefore, 2);
   assert.equal(r.signaturesBefore, 302);
   assert.equal(r.partial, true, 'counts are a lower bound');
 
   const busy = fakeRpc({ txs: early, extraSignatures: 25_000 });
-  const tooActive = await runMirror({ mint: MINT, wallet: 'me', fetchFn: busy.fetchFn });
+  const tooActive = await runMirror({ mint: MINT, wallet: 'me', fetchFn: busy.fetchFn, sleepFn: async () => {} });
   assert.equal(tooActive.error, 'too-active');
+});
+
+test('runMirror: when the token account gives the buy, only transactions up to it are decoded', async () => {
+  const txs = launchTxs([[100, 'dev', 1], [100, 's1', 2], [101, 's2', 1], [104, 'me', 1], ...Array.from({ length: 40 }, (_, i) => [200 + i, `late${i}`, 0.5])]);
+  const myBuy = txs[3].transaction.signatures[0];
+  const { fetchFn, calls } = fakeRpc({ txs, userAccounts: [{ pubkey: 'myAta', sigs: [{ signature: myBuy, slot: 104, err: null }] }] });
+  const r = await runMirror({ mint: MINT, wallet: 'me', fetchFn, sleepFn: async () => {} });
+  assert.equal(r.walletsBefore, 3);
+  assert.ok(calls.filter((c) => c === 'getTransaction').length <= 5, 'decodes the 4 transactions up to the buy, plus the buy itself');
 });

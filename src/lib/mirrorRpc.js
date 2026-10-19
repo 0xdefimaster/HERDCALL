@@ -2,21 +2,33 @@
 import { analyzeMirror, parseTrades } from './mirror.js';
 
 export const DEFAULT_RPC = 'https://api.mainnet-beta.solana.com';
-export const LIMITS = Object.freeze({ signaturePages: 20, earlyTransactions: 120, userTransactions: 15, concurrency: 4 });
+export const LIMITS = Object.freeze({ signaturePages: 20, earlyTransactions: 120, userTransactions: 15, concurrency: 3, retries: 8 });
+// Public endpoints rate-limit per IP; space requests out a little there.
+const PUBLIC_INTERVAL_MS = 120;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export function rpcClient(url = DEFAULT_RPC, fetchFn = globalThis.fetch) {
+export function rpcClient(url = DEFAULT_RPC, fetchFn = globalThis.fetch, { minIntervalMs = url === DEFAULT_RPC ? PUBLIC_INTERVAL_MS : 0, sleepFn = sleep } = {}) {
   let id = 0;
+  let nextAt = 0;
+  async function throttle() {
+    if (minIntervalMs <= 0) return;
+    const now = Date.now();
+    const wait = Math.max(0, nextAt - now);
+    nextAt = Math.max(now, nextAt) + minIntervalMs;
+    if (wait > 0) await sleepFn(wait);
+  }
   return async function call(method, params, attempt = 0) {
+    await throttle();
     id += 1;
     const res = await fetchFn(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
     });
-    if (res.status === 429 && attempt < 5) {
-      await sleep(500 * 2 ** attempt);
+    if (res.status === 429 && attempt < LIMITS.retries) {
+      const retryAfter = Number(res.headers?.get?.('retry-after'));
+      await sleepFn(retryAfter > 0 ? retryAfter * 1000 : Math.min(500 * 2 ** attempt, 10_000));
       return call(method, params, attempt + 1);
     }
     if (!res.ok) throw new Error(`RPC ${method} failed: HTTP ${res.status}`);
@@ -56,12 +68,23 @@ async function mapLimit(items, limit, fn, onDone) {
   return results;
 }
 
-const getTx = (call, signature) =>
-  call('getTransaction', [signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed' }]);
+// Newest transaction version we ask for. If the RPC reports a newer one, retry with the version it names.
+let txVersion = 1;
+async function getTx(call, signature) {
+  try {
+    return await call('getTransaction', [signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: txVersion, commitment: 'confirmed' }]);
+  } catch (e) {
+    const needed = /"maxSupportedTransactionVersion":\s*(\d+)/.exec(e.message);
+    if (!needed || Number(needed[1]) <= txVersion) throw e;
+    txVersion = Number(needed[1]);
+    return getTx(call, signature);
+  }
+}
 
 // Full Mirror run. `onProgress({ step, done, total })` for the UI.
-export async function runMirror({ mint, wallet, buySignature, rpcUrl, fetchFn, onProgress = () => {} }) {
-  const call = rpcClient(rpcUrl || DEFAULT_RPC, fetchFn);
+export async function runMirror({ mint, wallet, buySignature, rpcUrl, fetchFn, sleepFn, onProgress = () => {} }) {
+  const call = rpcClient(rpcUrl || DEFAULT_RPC, fetchFn, sleepFn ? { sleepFn } : undefined);
+  const decode = (sigs, onDone) => mapLimit(sigs, LIMITS.concurrency, (s) => getTx(call, s.signature), onDone);
 
   onProgress({ step: 'signatures' });
   const { signatures, complete } = await allSignatures(call, mint);
@@ -69,29 +92,26 @@ export async function runMirror({ mint, wallet, buySignature, rpcUrl, fetchFn, o
   if (signatures.length === 0) return { error: 'no-history' };
   const order = new Map(signatures.map((s, i) => [s.signature, i]));
   const withOrder = (t) => ({ ...t, order: order.get(t.signature) ?? null });
+  const tradesOf = (txs) => txs.flatMap((tx) => (tx ? parseTrades(tx, mint) : [])).map(withOrder);
 
-  const early = signatures.slice(0, LIMITS.earlyTransactions);
-  const earlyTxs = await mapLimit(early, LIMITS.concurrency, (s) => getTx(call, s.signature), (done, total) =>
-    onProgress({ step: 'early', done, total }),
-  );
-  const trades = earlyTxs.flatMap((tx) => (tx ? parseTrades(tx, mint) : [])).map(withOrder);
-
-  // The user's own buys: from the decoded window, an explicit transaction, or the user's token account history.
+  // 1. The user's first buy: from a pasted transaction, or the user's token account history (a few requests).
   onProgress({ step: 'user' });
-  let userTrades = trades.filter((t) => t.wallet === wallet);
-  if (buySignature) {
-    const tx = await getTx(call, buySignature);
-    if (tx) userTrades = userTrades.concat(parseTrades(tx, mint).map(withOrder));
-  }
-  if (!userTrades.some((t) => t.side === 'buy')) {
+  let userTrades = [];
+  if (buySignature) userTrades = userTrades.concat(tradesOf([await getTx(call, buySignature)]));
+  if (!userTrades.some((t) => t.wallet === wallet && t.side === 'buy')) {
     const accounts = await call('getTokenAccountsByOwner', [wallet, { mint }, { encoding: 'jsonParsed' }]);
     for (const acc of accounts?.value ?? []) {
       const sigs = await call('getSignaturesForAddress', [acc.pubkey, { limit: 1000 }]);
       const oldest = sigs.filter((s) => !s.err).reverse().slice(0, LIMITS.userTransactions);
-      const txs = await mapLimit(oldest, LIMITS.concurrency, (s) => getTx(call, s.signature));
-      userTrades = userTrades.concat(txs.flatMap((tx) => (tx ? parseTrades(tx, mint) : [])).map(withOrder));
+      userTrades = userTrades.concat(tradesOf(await decode(oldest)));
     }
   }
+  const knownBuy = userTrades.filter((t) => t.wallet === wallet && t.side === 'buy').sort((a, b) => a.slot - b.slot)[0];
+
+  // 2. The token's first transactions, only up to the user's buy when we already know it.
+  const window = (knownBuy ? signatures.filter((s) => s.slot <= knownBuy.slot) : signatures).slice(0, LIMITS.earlyTransactions);
+  const trades = tradesOf(await decode(window, (done, total) => onProgress({ step: 'early', done, total })));
+  userTrades = userTrades.concat(trades.filter((t) => t.wallet === wallet));
 
   const userBuy = userTrades.filter((t) => t.wallet === wallet && t.side === 'buy').sort((a, b) => a.slot - b.slot)[0];
   const signaturesBefore = userBuy ? signatures.filter((s) => s.slot < userBuy.slot).length : null;

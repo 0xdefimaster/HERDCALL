@@ -226,7 +226,7 @@ function MirrorResult({ result }) {
         <p className="mt-2 mb-0 text-hc-body">
           {result.firstBlockWallets > 0 && <>{result.firstBlockWallets} of them in the very first block. </>}
           You bought {result.slotsAfterLaunch} slot{result.slotsAfterLaunch === 1 ? '' : 's'} after launch
-          {result.secondsAfterLaunch != null ? ` (about ${result.secondsAfterLaunch}s)` : ''}.
+          {result.secondsAfterLaunch != null ? (result.secondsAfterLaunch < 1 ? ' (under a second)' : ` (about ${result.secondsAfterLaunch}s)`) : ''}.
         </p>
       </div>
 
@@ -303,7 +303,7 @@ function MirrorResult({ result }) {
       <div className="border-t-[3px] border-dashed border-hc-line pt-3 flex flex-col gap-1.5 text-sm text-hc-muted">
         <p className="m-0">“Before you” means wallets that bought in an earlier slot, or earlier in the same slot.</p>
         <p className="m-0">
-          Estimates from public chain data. SOL amounts include platform fees and account rent. The HerdCall version uses HerdCall&apos;s curve and Stampede
+          Estimates from public chain data. SOL amounts include platform fees, priority fees and tips, and account rent. The HerdCall version uses HerdCall&apos;s curve and Stampede
           formula; it is an illustration, not a promise of profit. Wallets are shown by shortened address; no one is labelled.
           {result.partial && ' You bought after the first transactions we decode, so counts are a lower bound.'}
         </p>

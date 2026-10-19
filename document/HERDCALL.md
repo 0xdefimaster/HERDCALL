@@ -332,8 +332,10 @@ Kullanıcı başka bir launchpad'de aldığı bir token'ı (ya da kendi cüzdan�
 - **Uzantı:** Aynı kart, HerdCall'daki bir Stampede için de üretilir: "Bu launch'ta senden önce giren: 0."
 - **Durum:** Sitede `/mirror` sayfası var. Örnek veriyle çalışır; canlı mod zincir verisini ziyaretçinin tarayıcısından
   herkese açık bir RPC ile okur (geçmişi en fazla 20.000 işlem olan tokenler, ilk 120 işlem çözülür). Kod:
-  `src/lib/mirror.js`, `src/lib/mirrorRpc.js`; testler `npm run test:mirror`. Canlı mod gerçek RPC'ye karşı henüz
-  doğrulanmadı.
+  `src/lib/mirror.js`, `src/lib/mirrorRpc.js`; testler `npm run test:mirror`. Canlı mod mainnet'te yeni çıkmış bir
+  token'la tarayıcıda uçtan uca denendi (herkese açık RPC, ~12 sn; 429 yanıtları yeniden denemeyle aşıldı). RPC,
+  herdcall.fun kaynağına CORS izni veriyor. SOL tutarları öncelik ücreti ve tip'leri de içerir; sniper'ların yüksek
+  tip'leri onların ortalama fiyatını yüksek gösterir, yani "kaç kat ödedin" oranı temkinli bir tahmindir.
 
 ## 11. Marka
 
