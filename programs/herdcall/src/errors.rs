@@ -44,8 +44,14 @@ pub enum HerdError {
     VaultUnderfunded,
     #[msg("Ticker must be 1-10 characters of A-Z and 0-9")]
     InvalidTicker,
-    #[msg("Ticker is still held by its launch")]
+    #[msg("Name must be 1-32 bytes without control characters")]
+    InvalidName,
+    #[msg("Name hash does not match the name")]
+    NameHashMismatch,
+    #[msg("Name and ticker are still held by a launch that can break out")]
     NameNotReleasable,
+    #[msg("The curve deadline has passed: sells only")]
+    BuysClosed,
 }
 
 pub fn core_err(e: herdcall_core::Error) -> Error {

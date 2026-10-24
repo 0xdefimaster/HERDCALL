@@ -37,7 +37,8 @@ pub fn example_params() -> LaunchParams {
         max_per_wallet: 0,
         migration_fee: SOL / 50,
         settle_window: 300,
-        name_hold_secs: 7 * 24 * 3600,
+        curve_lifetime_secs: 7 * 24 * 3600,
+        name_bond: SOL / 2,
     }
 }
 
@@ -63,13 +64,24 @@ pub struct LaunchKeys {
     pub sol_vault: Pubkey,
     pub creator_fees: Pubkey,
     pub creator_escrow: Pubkey,
-    pub name: Pubkey,
+    pub ticker_record: Pubkey,
+    pub name_record: Pubkey,
     pub ticker: String,
+    pub name: String,
     pub creator: Keypair,
 }
 
-pub fn name_pda(ticker: &str) -> Pubkey {
-    pda(&[NAME_SEED, ticker.as_bytes()])
+pub fn ticker_pda(ticker: &str) -> Pubkey {
+    pda(&[TICKER_SEED, ticker.as_bytes()])
+}
+
+/// Record address of a name; for an invalid name, a dummy hash so the program's own check can reject it.
+pub fn name_hash(name: &str) -> [u8; 32] {
+    name_seed(name).unwrap_or([7; 32])
+}
+
+pub fn name_pda(name: &str) -> Pubkey {
+    pda(&[NAME_SEED, name_hash(name).as_ref()])
 }
 
 impl Env {
@@ -167,7 +179,12 @@ impl Env {
         self.create_launch_named(bonded, lobby_secs, &ticker)
     }
 
+    /// A launch with the given ticker and the name "<ticker> Coin".
     pub fn create_launch_named(&mut self, bonded: bool, lobby_secs: i64, ticker: &str) -> Result<LaunchKeys, String> {
+        self.create_launch_full(bonded, lobby_secs, ticker, &format!("{ticker} Coin"))
+    }
+
+    pub fn create_launch_full(&mut self, bonded: bool, lobby_secs: i64, ticker: &str, name: &str) -> Result<LaunchKeys, String> {
         let creator = self.user(10);
         let mint_kp = Keypair::new();
         let mint = pk(&mint_kp.pubkey());
@@ -179,8 +196,10 @@ impl Env {
             sol_vault: pda(&[SOL_VAULT_SEED, launch.as_ref()]),
             creator_fees: pda(&[CREATOR_FEES_SEED, launch.as_ref()]),
             creator_escrow: pda(&[CREATOR_ESCROW_SEED, launch.as_ref()]),
-            name: name_pda(ticker),
+            ticker_record: ticker_pda(ticker),
+            name_record: name_pda(name),
             ticker: ticker.to_string(),
+            name: name.to_string(),
             creator,
         };
         let metas = herdcall::accounts::CreateLaunch {
@@ -192,13 +211,21 @@ impl Env {
             sol_vault: keys.sol_vault,
             creator_fees: keys.creator_fees,
             creator_escrow: keys.creator_escrow,
-            name: keys.name,
+            ticker_record: keys.ticker_record,
+            name_record: keys.name_record,
             token_program: anchor_spl::token::ID,
             associated_token_program: anchor_spl::associated_token::ID,
             system_program: anchor_lang::system_program::ID,
         }
         .to_account_metas(None);
-        let ix = self.ix(metas, herdcall::instruction::CreateLaunch { bonded, lobby_secs, ticker: ticker.to_string() }.data());
+        let ix = self.ix(metas, herdcall::instruction::CreateLaunch {
+                bonded,
+                lobby_secs,
+                ticker: ticker.to_string(),
+                name: name.to_string(),
+                name_hash: name_hash(name),
+            }
+            .data());
         let creator = keys.creator.insecure_clone();
         self.send(ix, &[&creator, &mint_kp])?;
         Ok(keys)
@@ -316,7 +343,9 @@ impl Env {
             mint: k.mint,
             token_vault: k.token_vault,
             sol_vault: k.sol_vault,
-            name: k.name,
+            ticker_record: k.ticker_record,
+            name_record: k.name_record,
+            creator: pk(&k.creator.pubkey()),
             token_program: anchor_spl::token::ID,
         }
         .to_account_metas(None);
@@ -351,13 +380,18 @@ impl Env {
     }
 
     pub fn release_name(&mut self, k: &LaunchKeys, caller: &Keypair) -> Result<(), String> {
-        let metas = herdcall::accounts::ReleaseName { name: k.name, launch: k.launch, creator: pk(&k.creator.pubkey()) }.to_account_metas(None);
+        let metas = herdcall::accounts::ReleaseName {
+            ticker_record: k.ticker_record,
+            name_record: k.name_record,
+            launch: k.launch,
+            creator: pk(&k.creator.pubkey()),
+        }.to_account_metas(None);
         let ix = self.ix(metas, herdcall::instruction::ReleaseName {}.data());
         self.send(ix, &[caller])
     }
 
-    pub fn name_record(&self, ticker: &str) -> Option<NameRecord> {
-        let d = self.data(&name_pda(ticker));
+    pub fn record(&self, key: &Pubkey) -> Option<NameRecord> {
+        let d = self.data(key);
         if d.is_empty() {
             return None;
         }

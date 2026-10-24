@@ -10,7 +10,7 @@ use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, spl_token::instruction::AuthorityType, Burn, Mint, MintTo, SetAuthority, Token, TokenAccount, Transfer};
 use herdcall_core::curve::Market;
 use herdcall_core::fees::{split_fee, FeeParts};
-use herdcall_core::names::{is_canonical_ticker, releasable};
+use herdcall_core::names::{buys_open, is_canonical_ticker, releasable};
 use herdcall_core::stampede::{claim_tokens, settle as settle_lobby};
 use herdcall_core::BPS;
 
@@ -38,11 +38,13 @@ pub mod herdcall {
         Ok(())
     }
 
-    /// Creates the token (fixed supply, no mint or freeze authority), reserves its ticker and opens its Lobby for
-    /// `lobby_secs` seconds. Fails if another launch holds the ticker.
-    pub fn create_launch(ctx: Context<CreateLaunch>, bonded: bool, lobby_secs: i64, ticker: String) -> Result<()> {
+    /// Creates the token (fixed supply, no mint or freeze authority), reserves its name and ticker against the
+    /// refundable bond and opens its Lobby for `lobby_secs` seconds. Fails if another launch holds the name or ticker.
+    /// `name_hash` is `name_seed(name)`, computed by the client to address the name record.
+    pub fn create_launch(ctx: Context<CreateLaunch>, bonded: bool, lobby_secs: i64, ticker: String, name: String, name_hash: [u8; 32]) -> Result<()> {
         require!(lobby_secs > 0 && lobby_secs <= MAX_LOBBY_SECS, HerdError::InvalidParams);
         require!(is_canonical_ticker(ticker.as_bytes()), HerdError::InvalidTicker);
+        require!(name_seed(&name).ok_or(HerdError::InvalidName)? == name_hash, HerdError::NameHashMismatch);
         let now = Clock::get()?.unix_timestamp;
         let params = ctx.accounts.config.params;
         let mint_key = ctx.accounts.mint.key();
@@ -55,8 +57,10 @@ pub mod herdcall {
             l.params = params;
             l.close_at = now.checked_add(lobby_secs).ok_or(HerdError::MathOverflow)?;
             l.settle_deadline = l.close_at.checked_add(params.settle_window).ok_or(HerdError::MathOverflow)?;
-            l.name_expires_at = l.close_at.checked_add(params.name_hold_secs).ok_or(HerdError::MathOverflow)?;
+            l.curve_deadline = l.close_at.checked_add(params.curve_lifetime_secs).ok_or(HerdError::MathOverflow)?;
             l.ticker = ticker.clone();
+            l.name = name.clone();
+            l.name_bond = params.name_bond;
             l.v = params.v0;
             l.t = params.t0;
             l.k = (params.v0 as u128) * (params.t0 as u128);
@@ -66,8 +70,12 @@ pub mod herdcall {
             l.creator_fees_bump = ctx.bumps.creator_fees;
             l.creator_escrow_bump = ctx.bumps.creator_escrow;
         }
-        ctx.accounts.name.launch = ctx.accounts.launch.key();
-        ctx.accounts.name.bump = ctx.bumps.name;
+        let launch_key = ctx.accounts.launch.key();
+        ctx.accounts.ticker_record.launch = launch_key;
+        ctx.accounts.ticker_record.bump = ctx.bumps.ticker_record;
+        ctx.accounts.name_record.launch = launch_key;
+        ctx.accounts.name_record.bump = ctx.bumps.name_record;
+        pay_from_wallet(&ctx.accounts.creator.to_account_info(), &ctx.accounts.ticker_record.to_account_info(), &ctx.accounts.system_program, params.name_bond)?;
         ctx.accounts.sol_vault.bump = ctx.bumps.sol_vault;
         ctx.accounts.creator_fees.bump = ctx.bumps.creator_fees;
         ctx.accounts.creator_escrow.bump = ctx.bumps.creator_escrow;
@@ -96,7 +104,7 @@ pub mod herdcall {
             AuthorityType::MintTokens,
             None,
         )?;
-        emit!(LaunchCreated { launch: ctx.accounts.launch.key(), mint: mint_key, creator: ctx.accounts.creator.key(), bonded, close_at: ctx.accounts.launch.close_at, ticker });
+        emit!(LaunchCreated { launch: ctx.accounts.launch.key(), mint: mint_key, creator: ctx.accounts.creator.key(), bonded, close_at: ctx.accounts.launch.close_at, ticker, name });
         Ok(())
     }
 
@@ -204,6 +212,7 @@ pub mod herdcall {
 
     /// Buys with exactly `gross` lamports (fee included); unused lamports never leave the wallet.
     pub fn buy_exact_in(ctx: Context<Trade>, gross: u64, min_tokens: u64) -> Result<()> {
+        require_buys_open(&ctx.accounts.launch)?;
         let has_iface = ctx.accounts.interface.is_some();
         let (mut m, kind, lock) = market(&ctx.accounts.launch)?;
         let q = m.buy_exact_in(gross as u128, min_tokens as u128, has_iface).map_err(core_err)?;
@@ -212,13 +221,14 @@ pub mod herdcall {
 
     /// Buys exactly `tokens` (clamped to what is left on the curve), paying at most `max_gross` lamports.
     pub fn buy_exact_out(ctx: Context<Trade>, tokens: u64, max_gross: u64) -> Result<()> {
+        require_buys_open(&ctx.accounts.launch)?;
         let has_iface = ctx.accounts.interface.is_some();
         let (mut m, kind, lock) = market(&ctx.accounts.launch)?;
         let q = m.buy_exact_out(tokens as u128, max_gross as u128, has_iface).map_err(core_err)?;
         settle_buy(ctx, &m, kind, lock, to_u64(q.tokens)?, to_u64(q.cost)?, q.fee, has_iface)
     }
 
-    /// Sells `tokens`, receiving at least `min_received` lamports after the fee.
+    /// Sells `tokens`, receiving at least `min_received` lamports after the fee. Open after the curve deadline too.
     pub fn sell(ctx: Context<Trade>, tokens: u64, min_received: u64) -> Result<()> {
         let has_iface = ctx.accounts.interface.is_some();
         let (mut m, kind, lock) = market(&ctx.accounts.launch)?;
@@ -266,32 +276,34 @@ pub mod herdcall {
                 to_u64(mig.burned)?,
             )?;
         }
-        // The ticker becomes permanent, unless it was released after a timeout and is now held by another launch.
-        let name = ctx.accounts.name.to_account_info();
-        if name.owner == &crate::ID && !name.data_is_empty() {
-            let mut rec = NameRecord::try_deserialize(&mut &name.data.borrow()[..])?;
-            if rec.launch == ctx.accounts.launch.key() {
-                rec.permanent = true;
-                rec.try_serialize(&mut &mut name.data.borrow_mut()[..])?;
-            }
-        }
+        // Name and ticker become permanent; the bond goes back to the creator.
+        ctx.accounts.ticker_record.permanent = true;
+        ctx.accounts.name_record.permanent = true;
+        let bond = ctx.accounts.launch.name_bond;
+        pay_from_vault(&ctx.accounts.ticker_record.to_account_info(), &ctx.accounts.creator.to_account_info(), bond)?;
         let l = &mut ctx.accounts.launch;
         l.lp_native = to_u64(mig.lp_native)?;
         l.lp_tokens = to_u64(mig.lp_tokens)?;
         l.burned = to_u64(mig.burned)?;
+        l.name_bond = 0;
         l.store_curve(&m.curve)?;
         l.phase = Phase::Migrating;
         emit!(BrokeOut { launch: l.key(), keeper: ctx.accounts.keeper.key(), lp_native: l.lp_native, lp_tokens: l.lp_tokens, burned: l.burned });
         Ok(())
     }
 
-    /// Permissionless. Frees the ticker of a launch that was cancelled, or that passed its hold time without breaking
-    /// out. The record's rent goes back to the launch creator.
+    /// Permissionless. Frees the name and ticker of a launch that can no longer break out: its Lobby expired
+    /// unsettled, or its curve passed the deadline (sells only from then on). Both records close; their rent and the
+    /// bond go back to the creator.
     pub fn release_name(ctx: Context<ReleaseName>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
-        let l = &ctx.accounts.launch;
-        require!(!ctx.accounts.name.permanent && releasable(l.name_status(now), now, l.name_expires_at), HerdError::NameNotReleasable);
-        emit!(NameReleased { launch: l.key(), ticker: l.ticker.clone() });
+        let l = &mut ctx.accounts.launch;
+        require!(
+            !ctx.accounts.ticker_record.permanent && releasable(l.name_status(now), now, l.curve_deadline),
+            HerdError::NameNotReleasable
+        );
+        l.name_bond = 0;
+        emit!(NameReleased { launch: l.key(), ticker: l.ticker.clone(), name: l.name.clone() });
         Ok(())
     }
 
@@ -331,8 +343,13 @@ fn validate_params(p: &LaunchParams) -> Result<()> {
         && p.min_total >= p.min_deposit
         && p.max_total >= p.min_total
         && p.settle_window > 0
-        && p.name_hold_secs > 0;
+        && p.curve_lifetime_secs > p.settle_window;
     require!(ok, HerdError::InvalidParams);
+    Ok(())
+}
+
+fn require_buys_open(l: &Launch) -> Result<()> {
+    require!(buys_open(Clock::get()?.unix_timestamp, l.curve_deadline), HerdError::BuysClosed);
     Ok(())
 }
 
@@ -449,7 +466,7 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(bonded: bool, lobby_secs: i64, ticker: String)]
+#[instruction(bonded: bool, lobby_secs: i64, ticker: String, name: String, name_hash: [u8; 32])]
 pub struct CreateLaunch<'info> {
     #[account(mut)]
     pub creator: Signer<'info>,
@@ -467,8 +484,10 @@ pub struct CreateLaunch<'info> {
     pub creator_fees: Account<'info, Vault>,
     #[account(init, payer = creator, space = 8 + Vault::INIT_SPACE, seeds = [CREATOR_ESCROW_SEED, launch.key().as_ref()], bump)]
     pub creator_escrow: Account<'info, Vault>,
-    #[account(init, payer = creator, space = 8 + NameRecord::INIT_SPACE, seeds = [NAME_SEED, ticker.as_bytes()], bump)]
-    pub name: Account<'info, NameRecord>,
+    #[account(init, payer = creator, space = 8 + NameRecord::INIT_SPACE, seeds = [TICKER_SEED, ticker.as_bytes()], bump)]
+    pub ticker_record: Account<'info, NameRecord>,
+    #[account(init, payer = creator, space = 8 + NameRecord::INIT_SPACE, seeds = [NAME_SEED, name_hash.as_ref()], bump)]
+    pub name_record: Account<'info, NameRecord>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
@@ -580,20 +599,26 @@ pub struct Breakout<'info> {
     pub token_vault: Account<'info, TokenAccount>,
     #[account(mut, seeds = [SOL_VAULT_SEED, launch.key().as_ref()], bump = launch.sol_vault_bump)]
     pub sol_vault: Account<'info, Vault>,
-    /// CHECK: the ticker's record PDA. It may be closed, or held by another launch after a timeout; `breakout` only
-    /// marks it permanent when it is this launch's record.
-    #[account(mut, seeds = [NAME_SEED, launch.ticker.as_bytes()], bump)]
-    pub name: UncheckedAccount<'info>,
+    // A launch that can break out still holds both records: they are only released once it cannot.
+    #[account(mut, seeds = [TICKER_SEED, launch.ticker.as_bytes()], bump = ticker_record.bump, has_one = launch @ HerdError::WrongAccount)]
+    pub ticker_record: Account<'info, NameRecord>,
+    #[account(mut, seeds = [NAME_SEED, name_seed(&launch.name).ok_or(HerdError::InvalidName)?.as_ref()], bump = name_record.bump, has_one = launch @ HerdError::WrongAccount)]
+    pub name_record: Account<'info, NameRecord>,
+    /// CHECK: receives the bond back; must be the launch creator.
+    #[account(mut, address = launch.creator @ HerdError::WrongAccount)]
+    pub creator: UncheckedAccount<'info>,
     pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct ReleaseName<'info> {
-    #[account(mut, seeds = [NAME_SEED, launch.ticker.as_bytes()], bump = name.bump, has_one = launch @ HerdError::WrongAccount, close = creator)]
-    pub name: Account<'info, NameRecord>,
-    #[account(seeds = [LAUNCH_SEED, launch.mint.as_ref()], bump = launch.bump, has_one = creator @ HerdError::WrongAccount)]
+    #[account(mut, seeds = [TICKER_SEED, launch.ticker.as_bytes()], bump = ticker_record.bump, has_one = launch @ HerdError::WrongAccount, close = creator)]
+    pub ticker_record: Account<'info, NameRecord>,
+    #[account(mut, seeds = [NAME_SEED, name_seed(&launch.name).ok_or(HerdError::InvalidName)?.as_ref()], bump = name_record.bump, has_one = launch @ HerdError::WrongAccount, close = creator)]
+    pub name_record: Account<'info, NameRecord>,
+    #[account(mut, seeds = [LAUNCH_SEED, launch.mint.as_ref()], bump = launch.bump, has_one = creator @ HerdError::WrongAccount)]
     pub launch: Account<'info, Launch>,
-    /// CHECK: receives the record's rent; must be the launch creator (`has_one` above).
+    /// CHECK: receives rent and bond; must be the launch creator (`has_one` above).
     #[account(mut)]
     pub creator: UncheckedAccount<'info>,
 }
@@ -635,12 +660,14 @@ pub struct LaunchCreated {
     pub bonded: bool,
     pub close_at: i64,
     pub ticker: String,
+    pub name: String,
 }
 
 #[event]
 pub struct NameReleased {
     pub launch: Pubkey,
     pub ticker: String,
+    pub name: String,
 }
 
 #[event]

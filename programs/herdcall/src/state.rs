@@ -14,6 +14,7 @@ pub const CREATOR_ESCROW_SEED: &[u8] = b"creator_escrow";
 pub const DEPOSIT_SEED: &[u8] = b"deposit";
 pub const INTERFACE_SEED: &[u8] = b"interface";
 pub const NAME_SEED: &[u8] = b"name";
+pub const TICKER_SEED: &[u8] = b"ticker";
 
 pub const TOKEN_DECIMALS: u8 = 6;
 pub const MAX_LOBBY_SECS: i64 = 3_600;
@@ -42,8 +43,11 @@ pub struct LaunchParams {
     pub max_per_wallet: u64,
     pub migration_fee: u64,
     pub settle_window: i64,
-    /// How long after the Lobby closes a launch that has not broken out keeps its ticker.
-    pub name_hold_secs: i64,
+    /// Buys stay open this long after the Lobby closes. A token that has not broken out by then only takes sells,
+    /// can never break out, and its name and ticker can be released.
+    pub curve_lifetime_secs: i64,
+    /// Refundable reservation bond (lamports) for the name and ticker; back to the creator at breakout or release.
+    pub name_bond: u64,
 }
 
 impl LaunchParams {
@@ -94,10 +98,15 @@ pub struct Launch {
     pub params: LaunchParams,
     #[max_len(10)]
     pub ticker: String,
+    /// As given by the creator; uniqueness is checked on its canonical form (`herdcall_core::names::canonical_name`).
+    #[max_len(32)]
+    pub name: String,
     pub close_at: i64,
     pub settle_deadline: i64,
-    /// The ticker can be released after this time unless the token has broken out.
-    pub name_expires_at: i64,
+    /// No buys from this time on unless the token has already reached breakout.
+    pub curve_deadline: i64,
+    /// Reservation bond still held in the ticker record (0 once it is paid back).
+    pub name_bond: u64,
     // Lobby
     pub total_deposits: u64,
     pub depositors: u32,
@@ -181,8 +190,8 @@ pub struct Deposit {
     pub bump: u8,
 }
 
-/// Ticker reservation, one per canonical ticker. Held by `launch` while it is active, permanent once it breaks out;
-/// otherwise anyone can close it after the launch is cancelled or its hold time passes (rent goes back to the creator).
+/// Reservation of one canonical name or ticker. Held by `launch` while it can still break out, permanent once it does;
+/// otherwise anyone can close it when the launch can no longer break out (rent and bond go back to the creator).
 #[account]
 #[derive(InitSpace)]
 pub struct NameRecord {
@@ -197,6 +206,11 @@ pub struct NameRecord {
 pub struct TradingInterface {
     pub owner: Pubkey,
     pub bump: u8,
+}
+
+/// PDA seed of a name: sha256 of its canonical form. `None` if the name is not valid.
+pub fn name_seed(name: &str) -> Option<[u8; 32]> {
+    herdcall_core::names::canonical_name(name).map(|c| solana_sha256_hasher::hash(c.as_bytes()).to_bytes())
 }
 
 pub fn to_u64(x: u128) -> Result<u64> {

@@ -13,10 +13,11 @@
     "deploy:testnet": "hardhat run scripts/deploy.js --network monadTestnet",
     "node": "hardhat node",
     "sim": "node sim/run.js",
-    "test:sim": "node --test sim/stampede.test.js sim/rekt-mining.test.js sim/curve.test.js",
+    "test:sim": "node --test sim/stampede.test.js sim/rekt-mining.test.js sim/curve.test.js sim/name-bond.test.js",
     "sim:rekt": "node sim/rekt-run.js",
     "test:mirror": "node --test src/lib/mirror.test.js",
     "sim:curve": "node sim/curve-run.js",
+    "sim:names": "node sim/name-bond-run.js",
     "vectors": "node sim/vectors.js",
     "test:core": "cd programs/herdcall-core && cargo test",
     "test:program": "cd programs && cargo build-sbf --manifest-path herdcall/Cargo.toml && cargo test -p herdcall-tests"

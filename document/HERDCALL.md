@@ -395,23 +395,63 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
   taşır, fazla LP tokenini yakar, Meteora DAMM v2 pozisyonunu kalıcı kilitler; pozisyon NFT'si programın hesabında durur (CURVE_SPEC §5). Mint / freeze yetkisi token oluşturulurken kaldırılır.
 - `herd_vault` + `builders_fund`: protokol payının kasaları (token öncesi birikim).
 
-**İsim (ticker) rezervasyonu** (programda var, testli)
+**Ad ve ticker rezervasyonu** (programda var, testli)
 
-Aynı ticker'la ikinci bir launch açılamaz; ama kimse popüler bir ticker'ı bedelsiz ve süresiz kapatamaz.
+Aynı ad veya aynı ticker'la ikinci bir launch açılamaz; ama kimse popüler bir adı bedelsiz ve süresiz kapatamaz. Kayıt,
+eski launch artık hiçbir şekilde breakout yapamayacak duruma gelmeden serbest kalmaz; böylece iki başarılı token aynı
+adı veya ticker'ı taşıyamaz.
 
-| Durum | Ticker |
+- **İkisi de benzersiz.** Ticker: 1–10 karakter, yalnızca A–Z ve 0–9; istemci büyük harfe çevirir, program kanonik
+  olmayanı reddeder. Ad: en fazla 32 bayt, kontrol karakteri yok; baştaki ve sondaki boşluklar ile büyük-küçük harf
+  farkı yok sayılır (`Pepe Coin`, `  PEPE COIN ` aynı ad; aradaki boşluklar sayılır). Ad kaydının adresi kanonik
+  biçimin sha256'sı; program aynı hesabı kendisi yapar.
+- **Curve süresi** (`curve_lifetime_secs`, şimdilik 7 gün, Lobby kapanışından itibaren): bu sürede breakout'a
+  ulaşmayan token'da alım kapanır, yalnızca satış açık kalır (holder'lar curve fiyatından çıkabilir; curve her zaman
+  tüm satışları karşılar). Alım olmadan breakout imkânsız olduğu için ad ve ticker ancak o zaman serbest kalır.
+
+| Durum | Ad ve ticker |
 |---|---|
-| Lobby açık veya settlement penceresinde | Launch'a ayrılmış, aynı ticker'la launch açılamaz |
-| Curve'de, bekleme süresi dolmadı (`name_hold_secs`, şimdilik 7 gün, Lobby kapanışından itibaren) | Ayrılmış |
-| Breakout'a ulaştı | **Kalıcı**, bir daha serbest kalmaz |
-| Lobby settle edilmeden süresi doldu (iptal) | Herkes `release_name` çağırıp serbest bırakabilir |
-| Curve'de, bekleme süresi doldu ve breakout yok | Herkes serbest bırakabilir; token işlem görmeye devam eder |
+| Lobby açık veya settlement penceresinde | Ayrılmış |
+| Curve'de, süre dolmadı | Ayrılmış |
+| Breakout'a ulaştı (süre sonradan dolsa da) | **Kalıcı**, bir daha serbest kalmaz; teminat creator'a döner |
+| Lobby settle edilmeden süresi doldu (iptal; artık settle edilemez) | Herkes `release_name` çağırıp serbest bırakabilir |
+| Curve süresi doldu, breakout yok (yalnızca satış) | Herkes serbest bırakabilir |
 
-- Anahtar: kanonik ticker, 1–10 karakter, yalnızca A–Z ve 0–9 (`pepe`, `Pepe`, `PEPE` aynı kayıt). İstemci büyük harfe
-  çevirir; program kanonik olmayanı reddeder.
-- Kayıt kapanınca kirası creator'a döner. Serbest bırakılmış ticker'ı yeni bir launch alırsa ve eski token sonradan
-  breakout yaparsa, breakout yine çalışır ama yeni sahibin kaydına dokunmaz.
-- Henüz yok: rezervasyon için bond veya ücret (açık soru, §14), Metaplex token metadata'sı (ad, sembol, görsel).
+- **İade edilebilir teminat** (`name_bond`): launch açılırken ticker kaydına kilitlenir. Breakout'ta veya serbest
+  bırakmada iki kaydın kirasıyla birlikte creator'a döner. İadesiz ücret yok.
+- **Teminat simülasyonu** (`npm run sim:names`, [`sim/name-bond.js`](../sim/name-bond.js)). Varsayımlar: curve süresi
+  7 gün, kilitli SOL'ün getirisi yıllık %7. LiteSVM'de ölçülen, geri dönmeyen launch maliyeti 0,0072 SOL; kayıt kirası
+  0,0017 SOL (geri döner).
+
+  Aynı anda N ad kapatmak için gereken sermaye (SOL):
+
+  | Teminat | N = 100 | N = 1.000 | N = 10.000 |
+  |---|---|---|---|
+  | 0 | 1 | 9 | 89 |
+  | 0,1 | 11 | 109 | 1.089 |
+  | 0,25 | 26 | 259 | 2.589 |
+  | 0,5 | 51 | 509 | 5.089 |
+  | 1 | 101 | 1.009 | 10.089 |
+
+  Tek bir adı tutmanın gerçek maliyeti (SOL; teminat geri döner):
+
+  | Teminat | 7 gün | 1 yıl | 100 ad, 1 yıl |
+  |---|---|---|---|
+  | 0 | 0,007 | 0,381 | 38,1 |
+  | 0,25 | 0,008 | 0,399 | 39,9 |
+  | 0,5 | 0,008 | 0,416 | 41,6 |
+  | 1 | 0,009 | 0,451 | 45,1 |
+
+  Dürüst creator teminatı en fazla birkaç gün kilitler; kaybı teminattan bağımsız olarak yaklaşık 0,007–0,009 SOL.
+
+  **Sonuç:** İade edilen teminat **toplu kapatmayı** pahalılaştırır (sermaye teminatla doğru orantılı). Ama **tek bir
+  adın** bir haftalığına kapatılmasını neredeyse hiç pahalılaştırmaz: teminat geri döndüğü için maliyet hep yaklaşık
+  0,008 SOL. Uzun süreli kapatma için her 7 günde yeni launch gerekir (yılda ~0,4 SOL/ad). Kapatıcı, süre dolunca
+  serbest bırakma ile yeniden açmayı tek işlemde yapıp sırayı kaybetmeden devam edebilir. Bunu yalnız teminat
+  engellemez; seçenekler §14'te.
+- Kayıtlar devredilemez; kapatıcı adı güvenilir biçimde satamaz (serbest kaldığında herkes alabilir).
+- Henüz yok: Metaplex token metadata'sı (ad, sembol, görsel). Benzer görünen harfler (ör. Kiril `а` / Latin `a`) ve
+  dile özgü harf dönüşümleri (Türkçe `İ`/`i`) ayrı ad sayılır.
 
 **Kod yapısı ve araç zinciri**
 - `programs/herdcall-core`: saf Rust, tam sayı ve taşma kontrollü aritmetik. Programdaki tüm hesaplar buradan gelir.
@@ -458,8 +498,9 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
      ([`programs/herdcall-tests`](../programs/herdcall-tests), LiteSVM, `npm run test:program`) derlenmiş programı
      çalıştırır ve her sonucu çekirdekle karşılaştırır: tam yaşam döngüsü, zaman ve aşama kuralları, boş Lobby, kayma
      limiti, sahte hesaplar, cüzdan ve Lobby sınırları, kira tabanı. Programa bilerek eklenen 9 hatanın 9'unu yakalar.
-   - ✅ **Ticker rezervasyonu** (§12): aktifken ayrılmış, breakout'ta kalıcı, iptal veya zaman aşımında serbest.
-     Uçtan uca testler; bilerek eklenen 6 hatanın 5'ini yakalar (kalan biri davranışı değiştirmeyen yedek kontrol).
+   - ✅ **Ad ve ticker rezervasyonu** (§12): ikisi de benzersiz; breakout'ta kalıcı; yalnızca launch artık breakout
+     yapamayacakken (iptal veya curve süresi dolup yalnızca satış) serbest; iade edilebilir teminat ve simülasyonu.
+     Uçtan uca testler; bilerek eklenen 8 hatanın 8'ini yakalar.
    - ⏳ Meteora DAMM v2 havuzunun açılması ve LP'nin kalıcı kilidi (breakout şimdilik fonları ayırıp `Migrating`
      aşamasında bekler), Metaplex token metadata'sı, devnet kurulumu ve devnet'te aynı testler.
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
@@ -488,8 +529,9 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
 - **Limit fiyat (v2 adayı):** "En fazla şu mcap'e kadar alırım" emri (STAMPEDE_SPEC §11).
 - Curve: kilitli Meteora pozisyonunun ücret dağıtımı (%25 likiditeye önerisi, kalanı?), geçiş ücreti, breakout'a ulaşmayan tokendeki Stampede fazlalığı, program yükseltme yetkisi (CURVE_SPEC §10). ✅ Karar verilen: $T_0$ = 1 milyar, Meteora DAMM v2, LP kalıcı kilit.
 - Create fee miktarı
-- Ticker rezervasyonu: bond veya ücret olacak mı, ne kadar; bekleme süresi (`name_hold_secs`, şimdilik 7 gün);
-  anahtar ticker mı, ad mı, ikisi birden mi (şimdilik ticker)
+- Ad/ticker teminatı: tutar (simülasyon §12; öneri 0,25–0,5 SOL), curve süresi (şimdilik 7 gün). Tek adın
+  kısa süreli veya sürekli kapatılmasına karşı ek önlem gerekip gerekmediği: ör. boş Lobby'de curve açılmaması
+  (adı tutmak için gerçek yatırım gerekir) veya serbest kalan adın kısa bir bekleme süresi.
 - Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı
 - Operasyon tabanının aylık tutarı
