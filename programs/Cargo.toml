@@ -4,5 +4,8 @@ resolver = "2"
 
 [profile.release]
 overflow-checks = true
+# Size over speed: 18% smaller (about 1.2 SOL less rent on deploy) for 10-40% more compute, far inside the limits
+# (programs/herdcall-tests/tests/compute.rs).
+opt-level = "s"
 lto = "fat"
 codegen-units = 1

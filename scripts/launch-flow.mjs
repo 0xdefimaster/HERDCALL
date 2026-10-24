@@ -41,7 +41,7 @@ const provider = new anchor.AnchorProvider(connection, new anchor.Wallet(payer),
 const idl = JSON.parse(readFileSync(new URL('../programs/idl/herdcall.json', import.meta.url), 'utf8'));
 const program = new anchor.Program(idl, provider);
 const g = globalKeys();
-const cu = web3.ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 });
+const cu = web3.ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }); // breakout measured about 211k
 
 const step = (msg) => console.log(`\n▸ ${msg}`);
 const ok = (msg) => console.log(`  ✓ ${msg}`);

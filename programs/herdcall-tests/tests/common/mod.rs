@@ -100,6 +100,8 @@ pub struct Env {
     pub admin: Keypair,
     pub now: i64,
     launches: u32,
+    /// Compute units the last successful transaction consumed.
+    pub last_cu: u64,
 }
 
 pub struct LaunchKeys {
@@ -156,7 +158,7 @@ impl Env {
         svm.add_program(addr(&DAMM), &damm).unwrap();
         let admin = Keypair::new();
         svm.airdrop(&admin.pubkey(), 1_000 * SOL).unwrap();
-        let mut env = Self { svm, admin, now: 1_800_000_000, launches: 0 };
+        let mut env = Self { svm, admin, now: 1_800_000_000, launches: 0, last_cu: 0 };
         env.set_time(env.now);
         let admin_key = pk(&env.admin.pubkey());
         env.set_upgrade_authority(Some(admin_key));
@@ -220,7 +222,13 @@ impl Env {
         cu.extend_from_slice(&1_400_000u32.to_le_bytes());
         let budget = Instruction { program_id: Address::from_str_const("ComputeBudget111111111111111111111111111111"), accounts: vec![], data: cu };
         let tx = Transaction::new_signed_with_payer(&[budget, ix], Some(&payer), signers, self.svm.latest_blockhash());
-        let r = self.svm.send_transaction(tx).map(|_| ()).map_err(|e| format!("{:?}\n{}", e.err, e.meta.logs.join("\n")));
+        let r = match self.svm.send_transaction(tx) {
+            Ok(meta) => {
+                self.last_cu = meta.compute_units_consumed;
+                Ok(())
+            }
+            Err(e) => Err(format!("{:?}\n{}", e.err, e.meta.logs.join("\n"))),
+        };
         self.svm.expire_blockhash();
         r
     }

@@ -15,7 +15,7 @@ import { useWallet } from '../wallet/WalletContext';
 
 const { web3, BN } = anchor;
 const INPUT = 'min-h-[54px] px-3.5 border-[3px] border-hc-cream bg-hc-bg text-hc-cream font-terminal text-[30px] w-full';
-const BREAKOUT_CU = 1_400_000;
+const BREAKOUT_CU = 400_000; // measured about 211k (programs/herdcall-tests/tests/compute.rs)
 const SLIPPAGE_BPS = 100; // 1%
 const bn = (x) => new BN(x.toString());
 

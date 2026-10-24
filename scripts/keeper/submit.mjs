@@ -19,7 +19,7 @@ async function jsonRpc(url, method, params) {
  * `mode`: 'rpc' or 'jito'. For Jito, `jitoUrl` is the block engine (e.g. https://mainnet.block-engine.jito.wtf) and
  * `tipLamports` the tip, paid only if the bundle lands.
  */
-export function makeSubmitter({ connection, payer, mode = 'rpc', jitoUrl, tipLamports = 10_000, priorityMicroLamports = 0, computeUnits = 600_000 }) {
+export function makeSubmitter({ connection, payer, mode = 'rpc', jitoUrl, tipLamports = 10_000, priorityMicroLamports = 0, computeUnits = 300_000 }) {
   let tipAccounts = null;
   const budget = () => [
     web3.ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnits }),
