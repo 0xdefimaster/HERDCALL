@@ -168,3 +168,28 @@ fn the_ledger_cannot_be_swapped() {
     let r = env.send(ix, &[&u]);
     assert!(r.unwrap_err().contains("AccountDiscriminatorMismatch"));
 }
+
+#[test]
+fn sol_sent_straight_to_the_vault_is_not_revenue() {
+    let mut env = Env::new();
+    env.initialize(example_params()).unwrap();
+    let k = env.create_launch(true, 60).unwrap();
+    let u = env.user(20);
+    env.deposit(&k, &u, 2 * SOL).unwrap();
+    env.set_time(env.launch(&k).close_at);
+    env.settle(&k, &u).unwrap();
+    let before = ledger(&env);
+    // Anyone can send lamports to the protocol PDA without the program: no counter moves, and the balance is then
+    // above the sum of the counters. A distribution must use the counters, never the balance.
+    let gift = 5 * SOL + 3;
+    env.add_lamports(&pda(&[PROTOCOL_SEED]), gift);
+    env.buy_exact_in(&k, &u, SOL, 1, None).unwrap();
+    let after = ledger(&env);
+    assert_eq!(after.stampede, before.stampede);
+    assert_eq!(after.other, before.other);
+    assert!(after.curve > before.curve, "the trade is still counted");
+    let protocol = pda(&[PROTOCOL_SEED]);
+    let held = env.lamports(&protocol) - env.rent(&protocol);
+    let counted = after.curve + after.stampede + after.lp + after.rounding + after.other;
+    assert_eq!(held - counted, gift, "the gift is exactly the uncounted part");
+}

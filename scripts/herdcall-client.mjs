@@ -16,6 +16,7 @@ export const ATA_PROGRAM = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsL
 export const WSOL = new PublicKey('So11111111111111111111111111111111111111112');
 export const SYSTEM = web3.SystemProgram.programId;
 export const RENT = web3.SYSVAR_RENT_PUBKEY;
+export const UPGRADEABLE_LOADER = new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111');
 
 const enc = (s) => new TextEncoder().encode(s);
 const pda = (seeds, program = PROGRAM_ID) => PublicKey.findProgramAddressSync(seeds, program)[0];
@@ -51,6 +52,18 @@ export const globalKeys = () => ({
   revenue: pda([enc('revenue')]),
   migrator: pda([enc('migrator')]),
 });
+
+/** The program's ProgramData account: `initialize` checks that its signer is the upgrade authority recorded there. */
+export const programDataKey = () => pda([PROGRAM_ID.toBuffer()], UPGRADEABLE_LOADER);
+
+/** Accounts of `initialize` for anchor's accountsStrict. `admin` must be the program's upgrade authority. */
+export function initializeAccounts(admin) {
+  const g = globalKeys();
+  return {
+    admin, config: g.config, protocol: g.protocol, rektBack: g.rektBack, revenue: g.revenue,
+    program: PROGRAM_ID, programData: programDataKey(), systemProgram: SYSTEM,
+  };
+}
 
 /** Every account that belongs to one launch. */
 export function launchKeys(mint, ticker, name) {

@@ -11,7 +11,8 @@
       "name": "initialize",
       "docs": [
         "One-time setup: default parameters for new launches, the DAMM v2 config for breakouts and the protocol /",
-        "Rekt-back vaults."
+        "Rekt-back vaults. Only the program's upgrade authority can call it, so nobody can take the admin role in the",
+        "window between deploying the program and initializing it."
       ],
       "discriminator": [
         175,
@@ -44,6 +45,12 @@
         {
           "name": "revenue",
           "writable": true
+        },
+        {
+          "name": "program"
+        },
+        {
+          "name": "program_data"
         },
         {
           "name": "system_program"
@@ -2214,7 +2221,12 @@
     {
       "code": 6032,
       "name": "NameNotReleasable",
-      "msg": "Name and ticker are held until the launch is cancelled or breaks out"
+      "msg": "Name and ticker can only be released once the launch is cancelled"
+    },
+    {
+      "code": 6033,
+      "name": "NotUpgradeAuthority",
+      "msg": "Only the program's upgrade authority can initialize"
     }
   ]
 }

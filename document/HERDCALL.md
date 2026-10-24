@@ -477,6 +477,16 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
   taşır, fazla LP tokenini yakar, Meteora DAMM v2 pozisyonunu kalıcı kilitler; pozisyon NFT'si programın hesabında durur (CURVE_SPEC §5). Mint / freeze yetkisi token oluşturulurken kaldırılır.
 - `herd_vault` + `builders_fund`: protokol payının kasaları (token öncesi birikim).
 
+**Kurulum yetkisi** (programda var, testli)
+
+`initialize` yalnızca programın yükseltme yetkilisi (upgrade authority) tarafından çağrılabilir. Program, imzalayanın kendi
+ProgramData hesabında kayıtlı yetkili olduğunu kontrol eder.
+- Neden: yükleme ile ilk kurulum arasındaki boşlukta başka biri `initialize`'ı çağırıp yönetici ve keeper rolünü
+  alamaz.
+- Başka bir programın ProgramData hesabı verilemez. Değiştirilemez (yetkilisi olmayan) bir program kurulamaz.
+- Testler: `programs/herdcall-tests/tests/initialize.rs`. Bilerek kaldırılan iki kontrolün ikisi de yakalanır. Yerel
+  doğrulayıcıda yabancı bir anahtarın kurulumu `NotUpgradeAuthority` ile reddedilir.
+
 **Ad ve ticker rezervasyonu** (programda var, testli)
 
 Aynı ad veya aynı ticker'la ikinci bir launch açılamaz. Lobby curve'e geçerse ad ve ticker kalıcı olarak o launch'a

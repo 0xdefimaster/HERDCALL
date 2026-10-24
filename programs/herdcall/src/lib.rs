@@ -34,7 +34,8 @@ pub mod herdcall {
     use super::*;
 
     /// One-time setup: default parameters for new launches, the DAMM v2 config for breakouts and the protocol /
-    /// Rekt-back vaults.
+    /// Rekt-back vaults. Only the program's upgrade authority can call it, so nobody can take the admin role in the
+    /// window between deploying the program and initializing it.
     pub fn initialize(ctx: Context<Initialize>, params: LaunchParams, dex_config: Pubkey) -> Result<()> {
         validate_params(&params)?;
         let c = &mut ctx.accounts.config;
@@ -845,6 +846,10 @@ pub struct Initialize<'info> {
     pub rekt_back: Account<'info, Vault>,
     #[account(init, payer = admin, space = 8 + RevenueLedger::INIT_SPACE, seeds = [REVENUE_SEED], bump)]
     pub revenue: Account<'info, RevenueLedger>,
+    #[account(constraint = program.programdata_address()? == Some(program_data.key()) @ HerdError::NotUpgradeAuthority)]
+    pub program: Program<'info, crate::program::Herdcall>,
+    #[account(constraint = program_data.upgrade_authority_address == Some(admin.key()) @ HerdError::NotUpgradeAuthority)]
+    pub program_data: Account<'info, ProgramData>,
     pub system_program: Program<'info, System>,
 }
 

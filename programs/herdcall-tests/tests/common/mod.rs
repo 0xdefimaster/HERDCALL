@@ -131,6 +131,13 @@ pub fn name_hash(name: &str) -> [u8; 32] {
     name_seed(name).unwrap_or([7; 32])
 }
 
+pub const UPGRADEABLE_LOADER: Pubkey = anchor_lang::solana_program::bpf_loader_upgradeable::ID;
+
+/// The program's ProgramData account (upgradeable loader).
+pub fn program_data() -> Pubkey {
+    Pubkey::find_program_address(&[herdcall::ID.as_ref()], &UPGRADEABLE_LOADER).0
+}
+
 pub fn name_pda(name: &str) -> Pubkey {
     pda(&[NAME_SEED, name_hash(name).as_ref()])
 }
@@ -151,6 +158,8 @@ impl Env {
         svm.airdrop(&admin.pubkey(), 1_000 * SOL).unwrap();
         let mut env = Self { svm, admin, now: 1_800_000_000, launches: 0 };
         env.set_time(env.now);
+        let admin_key = pk(&env.admin.pubkey());
+        env.set_upgrade_authority(Some(admin_key));
         env.install_dex_config(migrator());
         env.install_native_mint();
         env
@@ -186,6 +195,16 @@ impl Env {
         let lamports = self.svm.minimum_balance_for_rent_exemption(d.len());
         let acc = solana_account::Account { lamports, data: d, owner: addr(&DAMM), executable: false, rent_epoch: 0 };
         self.svm.set_account(addr(&DEX_CONFIG), acc).unwrap();
+    }
+
+    /// LiteSVM deploys with no upgrade authority; a real deploy makes the deployer the authority.
+    pub fn set_upgrade_authority(&mut self, authority: Option<Pubkey>) {
+        let key = addr(&program_data());
+        let mut acc = self.svm.get_account(&key).unwrap();
+        // UpgradeableLoaderState::ProgramData: tag u32, slot u64, Option<Pubkey> (1 + 32 bytes).
+        acc.data[12] = authority.is_some() as u8;
+        acc.data[13..45].copy_from_slice(authority.unwrap_or_default().as_ref());
+        self.svm.set_account(key, acc).unwrap();
     }
 
     pub fn user(&mut self, sol: u64) -> Keypair {
@@ -247,17 +266,23 @@ impl Env {
 
     pub fn initialize(&mut self, params: LaunchParams) -> Result<(), String> {
         let admin = self.admin.insecure_clone();
+        self.initialize_as(&admin, program_data(), params)
+    }
+
+    pub fn initialize_as(&mut self, admin: &Keypair, program_data: Pubkey, params: LaunchParams) -> Result<(), String> {
         let metas = herdcall::accounts::Initialize {
             admin: pk(&admin.pubkey()),
             config: pda(&[CONFIG_SEED]),
             protocol: pda(&[PROTOCOL_SEED]),
             rekt_back: pda(&[REKT_BACK_SEED]),
             revenue: pda(&[REVENUE_SEED]),
+            program: herdcall::ID,
+            program_data,
             system_program: anchor_lang::system_program::ID,
         }
         .to_account_metas(None);
         let ix = self.ix(metas, herdcall::instruction::Initialize { params, dex_config: DEX_CONFIG }.data());
-        self.send(ix, &[&admin])
+        self.send(ix, &[admin])
     }
 
     /// A launch with a fresh ticker (T0, T1, ...).

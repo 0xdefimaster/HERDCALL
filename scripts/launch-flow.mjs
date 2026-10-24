@@ -11,7 +11,7 @@ import { homedir } from 'node:os';
 import {
   PROGRAM_ID, DAMM, METADATA_PROGRAM, TOKEN_PROGRAM, ATA_PROGRAM, SYSTEM, RENT,
   WSOL, ata, breakoutAccounts, canonicalTicker, claimLpFeesAccounts, createAtaIx, depositKey, dexKeys, dexSwapIx,
-  globalKeys, launchKeys, nameHash, reinvestLpAccounts, REINVEST_MIN_LAMPORTS, wrapSolIxs,
+  globalKeys, initializeAccounts, launchKeys, nameHash, reinvestLpAccounts, REINVEST_MIN_LAMPORTS, wrapSolIxs,
 } from './herdcall-client.mjs';
 
 const { web3, BN } = anchor;
@@ -87,7 +87,7 @@ async function main() {
     if (!c.dexConfig.equals(dexConfig)) throw new Error('config points to another DAMM config; use set_dex_config');
   } else {
     await program.methods.initialize(launchParams, dexConfig)
-      .accountsStrict({ admin: payer.publicKey, config: g.config, protocol: g.protocol, rektBack: g.rektBack, revenue: g.revenue, systemProgram: SYSTEM })
+      .accountsStrict(initializeAccounts(payer.publicKey))
       .rpc();
     ok('config, protocol and Rekt-back vaults created');
   }

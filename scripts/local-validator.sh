@@ -2,12 +2,14 @@
 # Starts a local validator with the HerdCall program (mainnet build), the real Metaplex and Meteora DAMM v2 programs
 # and a private DAMM config whose pool creator is the HerdCall migrator: the same setup mainnet needs.
 # DEVNET=1 uses the devnet build and a public config instead, as on devnet.
-# Then, in another shell:
-#   node scripts/launch-flow.mjs --url http://127.0.0.1:8899 --dex-config AeLtDKgw3XnXbr3Kgfbcb7KiZULVCQ5mXaFDiG9n7EgW --params example
+# The program is upgradeable with KEYPAIR (default ~/.config/solana/id.json) as its upgrade authority, as after a real
+# deploy: only that key can initialize. Then, in another shell:
+#   node scripts/launch-flow.mjs --url http://127.0.0.1:8899 --keypair <KEYPAIR> --dex-config AeLtDKgw3XnXbr3Kgfbcb7KiZULVCQ5mXaFDiG9n7EgW --params example
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 fx="$root/programs/fixtures"
 ledger="${LEDGER:-$root/programs/target/test-ledger}"
+authority="$(solana-keygen pubkey "${KEYPAIR:-$HOME/.config/solana/id.json}")"
 [ -f "$fx/damm_v2.so" ] || "$fx/fetch.sh"
 if [ -n "${DEVNET:-}" ]; then
   cargo build-sbf --manifest-path "$root/programs/herdcall/Cargo.toml" --features devnet -- --target-dir "$root/programs/target/devnet"
@@ -26,7 +28,7 @@ writeFileSync('$ledger.config.json', JSON.stringify({ pubkey: 'AeLtDKgw3XnXbr3Kg
   executable: false, rentEpoch: 0, space: d.length } }));
 "
 exec solana-test-validator --reset --quiet --ledger "$ledger" \
-  --bpf-program EPh2hoECkDTsSeHCriDwsF8DhVGhCjxwrbtC3qqyoJ8K "$so" \
+  --upgradeable-program EPh2hoECkDTsSeHCriDwsF8DhVGhCjxwrbtC3qqyoJ8K "$so" "$authority" \
   --bpf-program metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s "$fx/mpl_token_metadata.so" \
   --bpf-program cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG "$fx/damm_v2.so" \
   --account AeLtDKgw3XnXbr3Kgfbcb7KiZULVCQ5mXaFDiG9n7EgW "$ledger.config.json"

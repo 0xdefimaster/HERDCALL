@@ -66,8 +66,10 @@ pub enum HerdError {
     PriceOutOfBand,
     #[msg("Price band is wider than allowed")]
     BandTooWide,
-    #[msg("Name and ticker are held until the launch is cancelled or breaks out")]
+    #[msg("Name and ticker can only be released once the launch is cancelled")]
     NameNotReleasable,
+    #[msg("Only the program's upgrade authority can initialize")]
+    NotUpgradeAuthority,
 }
 
 pub fn core_err(e: herdcall_core::Error) -> Error {
