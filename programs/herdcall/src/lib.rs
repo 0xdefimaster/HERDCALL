@@ -10,7 +10,7 @@ use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, spl_token::instruction::AuthorityType, Burn, Mint, MintTo, SetAuthority, Token, TokenAccount, Transfer};
 use herdcall_core::curve::Market;
 use herdcall_core::fees::{split_fee, FeeParts};
-use herdcall_core::names::{buys_open, is_canonical_ticker, releasable};
+use herdcall_core::names::{is_canonical_ticker, releasable};
 use herdcall_core::stampede::{claim_tokens, settle as settle_lobby};
 use herdcall_core::BPS;
 
@@ -57,7 +57,6 @@ pub mod herdcall {
             l.params = params;
             l.close_at = now.checked_add(lobby_secs).ok_or(HerdError::MathOverflow)?;
             l.settle_deadline = l.close_at.checked_add(params.settle_window).ok_or(HerdError::MathOverflow)?;
-            l.curve_deadline = l.close_at.checked_add(params.curve_lifetime_secs).ok_or(HerdError::MathOverflow)?;
             l.ticker = ticker.clone();
             l.name = name.clone();
             l.name_bond = params.name_bond;
@@ -138,7 +137,8 @@ pub mod herdcall {
         Ok(())
     }
 
-    /// Permissionless. The pool makes one buy at the price the curve opens at (STAMPEDE_SPEC §4).
+    /// Permissionless. The pool makes one buy at the price the curve opens at (STAMPEDE_SPEC §4). A Lobby below the
+    /// minimum opens no curve: the launch is cancelled, deposits are refunded and the name and ticker can be released.
     pub fn settle(ctx: Context<Settle>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let l = &mut ctx.accounts.launch;
@@ -146,7 +146,11 @@ pub mod herdcall {
         require!(now >= l.close_at, HerdError::LobbyOpen);
         require!(now < l.settle_deadline, HerdError::SettleDeadlinePassed);
         let (s, curve) = settle_lobby(&l.params.lobby(), l.total_deposits as u128).map_err(core_err)?;
-        l.settled_empty = s.empty;
+        if s.empty {
+            l.phase = Phase::Cancelled;
+            emit!(Settled { launch: l.key(), total: l.total_deposits, lobby_tokens: 0, net: 0, fee: 0, empty: true });
+            return Ok(());
+        }
         l.lobby_tokens = to_u64(s.x)?;
         l.store_curve(&curve)?;
         l.phase = Phase::Curve;
@@ -167,17 +171,13 @@ pub mod herdcall {
         Ok(())
     }
 
-    /// Pull claim after the Stampede: tokens pro rata (or the full deposit back if the Lobby was empty).
+    /// Pull claim after the Stampede: tokens pro rata.
     pub fn claim(ctx: Context<Claim>) -> Result<()> {
         let l = &mut ctx.accounts.launch;
         require!(l.phase != Phase::Lobby && l.phase != Phase::Cancelled, HerdError::NotSettled);
         let d = &mut ctx.accounts.deposit;
         require!(!d.withdrawn, HerdError::AlreadyWithdrawn);
         d.withdrawn = true;
-        if l.settled_empty {
-            pay_from_vault(&ctx.accounts.sol_vault.to_account_info(), &ctx.accounts.user.to_account_info(), d.amount)?;
-            return Ok(());
-        }
         let q = to_u64(claim_tokens(d.amount as u128, l.total_deposits as u128, l.lobby_tokens as u128).map_err(core_err)?)?;
         l.lobby_tokens_claimed = l.lobby_tokens_claimed.checked_add(q).ok_or(HerdError::MathOverflow)?;
         let mint_key = l.mint;
@@ -194,7 +194,7 @@ pub mod herdcall {
         Ok(())
     }
 
-    /// After the settlement window without a settlement: the Lobby is cancelled and everyone takes the deposit back.
+    /// A cancelled Lobby (below the minimum, or not settled before its deadline): everyone takes the deposit back.
     pub fn refund(ctx: Context<Refund>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let l = &mut ctx.accounts.launch;
@@ -212,7 +212,6 @@ pub mod herdcall {
 
     /// Buys with exactly `gross` lamports (fee included); unused lamports never leave the wallet.
     pub fn buy_exact_in(ctx: Context<Trade>, gross: u64, min_tokens: u64) -> Result<()> {
-        require_buys_open(&ctx.accounts.launch)?;
         let has_iface = ctx.accounts.interface.is_some();
         let (mut m, kind, lock) = market(&ctx.accounts.launch)?;
         let q = m.buy_exact_in(gross as u128, min_tokens as u128, has_iface).map_err(core_err)?;
@@ -221,14 +220,13 @@ pub mod herdcall {
 
     /// Buys exactly `tokens` (clamped to what is left on the curve), paying at most `max_gross` lamports.
     pub fn buy_exact_out(ctx: Context<Trade>, tokens: u64, max_gross: u64) -> Result<()> {
-        require_buys_open(&ctx.accounts.launch)?;
         let has_iface = ctx.accounts.interface.is_some();
         let (mut m, kind, lock) = market(&ctx.accounts.launch)?;
         let q = m.buy_exact_out(tokens as u128, max_gross as u128, has_iface).map_err(core_err)?;
         settle_buy(ctx, &m, kind, lock, to_u64(q.tokens)?, to_u64(q.cost)?, q.fee, has_iface)
     }
 
-    /// Sells `tokens`, receiving at least `min_received` lamports after the fee. Open after the curve deadline too.
+    /// Sells `tokens`, receiving at least `min_received` lamports after the fee.
     pub fn sell(ctx: Context<Trade>, tokens: u64, min_received: u64) -> Result<()> {
         let has_iface = ctx.accounts.interface.is_some();
         let (mut m, kind, lock) = market(&ctx.accounts.launch)?;
@@ -292,14 +290,14 @@ pub mod herdcall {
         Ok(())
     }
 
-    /// Permissionless. Frees the name and ticker of a launch that can no longer break out: its Lobby expired
-    /// unsettled, or its curve passed the deadline (sells only from then on). Both records close; their rent and the
-    /// bond go back to the creator.
+    /// Permissionless. Frees the name and ticker of a cancelled launch (Lobby below the minimum, or not settled before
+    /// its deadline). A token on the curve keeps them for as long as it can break out. Both records close; their rent
+    /// and the bond go back to the creator.
     pub fn release_name(ctx: Context<ReleaseName>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let l = &mut ctx.accounts.launch;
         require!(
-            !ctx.accounts.ticker_record.permanent && releasable(l.name_status(now), now, l.curve_deadline),
+            !ctx.accounts.ticker_record.permanent && releasable(l.name_status(now)),
             HerdError::NameNotReleasable
         );
         l.name_bond = 0;
@@ -342,14 +340,8 @@ fn validate_params(p: &LaunchParams) -> Result<()> {
         && p.min_deposit > 0
         && p.min_total >= p.min_deposit
         && p.max_total >= p.min_total
-        && p.settle_window > 0
-        && p.curve_lifetime_secs > p.settle_window;
+        && p.settle_window > 0;
     require!(ok, HerdError::InvalidParams);
-    Ok(())
-}
-
-fn require_buys_open(l: &Launch) -> Result<()> {
-    require!(buys_open(Clock::get()?.unix_timestamp, l.curve_deadline), HerdError::BuysClosed);
     Ok(())
 }
 
@@ -599,7 +591,7 @@ pub struct Breakout<'info> {
     pub token_vault: Account<'info, TokenAccount>,
     #[account(mut, seeds = [SOL_VAULT_SEED, launch.key().as_ref()], bump = launch.sol_vault_bump)]
     pub sol_vault: Account<'info, Vault>,
-    // A launch that can break out still holds both records: they are only released once it cannot.
+    // A launch that reaches breakout was never cancelled, so it still holds both records.
     #[account(mut, seeds = [TICKER_SEED, launch.ticker.as_bytes()], bump = ticker_record.bump, has_one = launch @ HerdError::WrongAccount)]
     pub ticker_record: Account<'info, NameRecord>,
     #[account(mut, seeds = [NAME_SEED, name_seed(&launch.name).ok_or(HerdError::InvalidName)?.as_ref()], bump = name_record.bump, has_one = launch @ HerdError::WrongAccount)]

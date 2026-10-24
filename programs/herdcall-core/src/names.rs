@@ -1,8 +1,8 @@
 //! Name and ticker reservation rules (document/HERDCALL.md §12, "Ad ve ticker rezervasyonu").
 //!
-//! A launch reserves both its name and its ticker. They are held while the launch can still break out, become
-//! permanent at breakout, and can be released (bond back to the creator) only once the launch can never break out:
-//! the Lobby expired unsettled, or the curve passed its deadline, after which it only takes sells.
+//! A launch reserves both its name and its ticker when it opens. They become permanent at breakout. A token on the
+//! curve keeps them for as long as it can still break out, which has no time limit. They are released only when the
+//! launch is cancelled: its Lobby stayed below the minimum, or nobody settled it in time.
 
 pub const MAX_TICKER_LEN: usize = 10;
 /// Bytes of the name as given (same limit as Metaplex token metadata).
@@ -29,26 +29,17 @@ pub fn canonical_name(name: &str) -> Option<String> {
 pub enum LaunchStatus {
     /// Lobby, before its settlement deadline.
     Lobby,
-    /// The Lobby was never settled and its deadline has passed: it can never trade (cancelled, refunds only).
-    LobbyExpired,
-    /// On the curve. Buys are open until the curve deadline; after it the curve only takes sells.
+    /// The Lobby stayed below the minimum, or was not settled before its deadline: no curve, refunds only.
+    Cancelled,
+    /// On the curve; it can still break out.
     Curve,
     /// Reached breakout (breaking out, migrating or migrated).
     BrokeOut,
 }
 
-/// Whether buys are open on the curve at `now`. Without buys the token can never reach breakout.
-pub fn buys_open(now: i64, curve_deadline: i64) -> bool {
-    now < curve_deadline
-}
-
-/// Whether a reservation can be released at `now`: only when the launch can no longer break out.
-pub fn releasable(status: LaunchStatus, now: i64, curve_deadline: i64) -> bool {
-    match status {
-        LaunchStatus::LobbyExpired => true,
-        LaunchStatus::Curve => !buys_open(now, curve_deadline),
-        LaunchStatus::Lobby | LaunchStatus::BrokeOut => false,
-    }
+/// Whether a reservation can be released: only once the launch is cancelled and can never break out.
+pub fn releasable(status: LaunchStatus) -> bool {
+    status == LaunchStatus::Cancelled
 }
 
 #[cfg(test)]
@@ -81,12 +72,11 @@ mod tests {
     }
 
     #[test]
-    fn release_only_when_breakout_is_impossible() {
+    fn release_only_when_cancelled() {
         use LaunchStatus::*;
-        assert!(!releasable(Lobby, 100, 50));
-        assert!(releasable(LobbyExpired, 0, 50));
-        assert!(!releasable(Curve, 49, 50) && buys_open(49, 50));
-        assert!(releasable(Curve, 50, 50) && !buys_open(50, 50));
-        assert!(!releasable(BrokeOut, i64::MAX, 50));
+        assert!(releasable(Cancelled));
+        for held in [Lobby, Curve, BrokeOut] {
+            assert!(!releasable(held), "{held:?}");
+        }
     }
 }

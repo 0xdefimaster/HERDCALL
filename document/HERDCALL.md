@@ -397,59 +397,48 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 
 **Ad ve ticker rezervasyonu** (programda var, testli)
 
-Aynı ad veya aynı ticker'la ikinci bir launch açılamaz; ama kimse popüler bir adı bedelsiz ve süresiz kapatamaz. Kayıt,
-eski launch artık hiçbir şekilde breakout yapamayacak duruma gelmeden serbest kalmaz; böylece iki başarılı token aynı
-adı veya ticker'ı taşıyamaz.
+Aynı ad veya aynı ticker'la ikinci bir launch açılamaz. Kayıt, eski launch hiçbir şekilde breakout yapamayacak hâle
+gelmeden serbest kalmaz; böylece iki başarılı token aynı adı veya ticker'ı taşıyamaz. Curve'de süre sınırı yok.
 
 - **İkisi de benzersiz.** Ticker: 1–10 karakter, yalnızca A–Z ve 0–9; istemci büyük harfe çevirir, program kanonik
   olmayanı reddeder. Ad: en fazla 32 bayt, kontrol karakteri yok; baştaki ve sondaki boşluklar ile büyük-küçük harf
   farkı yok sayılır (`Pepe Coin`, `  PEPE COIN ` aynı ad; aradaki boşluklar sayılır). Ad kaydının adresi kanonik
   biçimin sha256'sı; program aynı hesabı kendisi yapar.
-- **Curve süresi** (`curve_lifetime_secs`, şimdilik 7 gün, Lobby kapanışından itibaren): bu sürede breakout'a
-  ulaşmayan token'da alım kapanır, yalnızca satış açık kalır (holder'lar curve fiyatından çıkabilir; curve her zaman
-  tüm satışları karşılar). Alım olmadan breakout imkânsız olduğu için ad ve ticker ancak o zaman serbest kalır.
+- **Minimum Lobby** (`min_total`, öneri 1 SOL): Lobby bu tutara ulaşmazsa curve açılmaz, launch iptal olur, herkes
+  tam iade alır. Böylece ad boş Lobby ile tutulamaz.
 
 | Durum | Ad ve ticker |
 |---|---|
-| Lobby açık veya settlement penceresinde | Ayrılmış |
-| Curve'de, süre dolmadı | Ayrılmış |
-| Breakout'a ulaştı (süre sonradan dolsa da) | **Kalıcı**, bir daha serbest kalmaz; teminat creator'a döner |
-| Lobby settle edilmeden süresi doldu (iptal; artık settle edilemez) | Herkes `release_name` çağırıp serbest bırakabilir |
-| Curve süresi doldu, breakout yok (yalnızca satış) | Herkes serbest bırakabilir |
+| Lobby açık veya settlement penceresinde | Geçici olarak ayrılmış |
+| Lobby minimumun altında kaldı (settle → iptal) | Hemen serbest bırakılabilir (`release_name`, herkes çağırabilir) |
+| Lobby settle edilmeden süresi doldu (iptal) | Hemen serbest bırakılabilir |
+| Curve'de (alım açık, süre sınırı yok) | Ayrılmış; serbest bırakılamaz |
+| Breakout'a ulaştı | **Kalıcı**; teminat creator'a döner |
 
-- **İade edilebilir teminat** (`name_bond`): launch açılırken ticker kaydına kilitlenir. Breakout'ta veya serbest
-  bırakmada iki kaydın kirasıyla birlikte creator'a döner. İadesiz ücret yok.
-- **Teminat simülasyonu** (`npm run sim:names`, [`sim/name-bond.js`](../sim/name-bond.js)). Varsayımlar: curve süresi
-  7 gün, kilitli SOL'ün getirisi yıllık %7. LiteSVM'de ölçülen, geri dönmeyen launch maliyeti 0,0072 SOL; kayıt kirası
-  0,0017 SOL (geri döner).
+- **İade edilebilir teminat** (`name_bond`, 0,25 SOL; parametre): launch açılırken ticker kaydına kilitlenir.
+  Breakout'ta veya iptalde iki kaydın kirasıyla birlikte creator'a döner. İadesiz ücret yok. Breakout'a ulaşmayan ama
+  curve'de kalan token'ın teminatı kilitli kalır (bu token adını tutmaya devam ettiği için).
+- **Kapatma (squatting) simülasyonu** (`npm run sim:names`, [`sim/name-bond.js`](../sim/name-bond.js)). Varsayımlar:
+  teminat 0,25 SOL, kilitli SOL'ün getirisi yıllık %7; LiteSVM'de ölçülen, geri dönmeyen launch maliyeti 0,0072 SOL.
+  Bir adı süresiz tutmanın en ucuz yolu: Lobby'yi tek başına minimumla doldurmak, token'ları geri satmak. Geri
+  dönmeyen kısım ücretler (creator ve arayüz payları geri alınmış olarak) ve Stampede'nin curve'de bıraktığı
+  $N^2/(V_0+2N)$ fazlası; bu fazla Lobby tutarının karesiyle büyür.
 
-  Aynı anda N ad kapatmak için gereken sermaye (SOL):
+  | Minimum Lobby | Bir ad için tek seferlik kayıp | + 1 yıl teminat getirisi | 1.000 ad: kalıcı kayıp | 1.000 ad: en yüksek sermaye |
+  |---|---|---|---|---|
+  | 0,1 SOL | 0,009 | 0,026 | 9 | 359 |
+  | 0,5 SOL | 0,021 | 0,039 | 21 | 759 |
+  | 1 SOL | 0,050 | 0,067 | 50 | 1.259 |
+  | 2 SOL | 0,146 | 0,163 | 146 | 2.259 |
+  | 3 SOL | 0,287 | 0,305 | 287 | 3.259 |
 
-  | Teminat | N = 100 | N = 1.000 | N = 10.000 |
-  |---|---|---|---|
-  | 0 | 1 | 9 | 89 |
-  | 0,1 | 11 | 109 | 1.089 |
-  | 0,25 | 26 | 259 | 2.589 |
-  | 0,5 | 51 | 509 | 5.089 |
-  | 1 | 101 | 1.009 | 10.089 |
+  1.000 adı tutarken her durumda 252 SOL teminat kilitli kalır. Dürüst creator: 0,259 SOL peşin, breakout veya iptalde
+  0,25 SOL'ü geri alır; kaybı yaklaşık 0,007–0,009 SOL.
 
-  Tek bir adı tutmanın gerçek maliyeti (SOL; teminat geri döner):
-
-  | Teminat | 7 gün | 1 yıl | 100 ad, 1 yıl |
-  |---|---|---|---|
-  | 0 | 0,007 | 0,381 | 38,1 |
-  | 0,25 | 0,008 | 0,399 | 39,9 |
-  | 0,5 | 0,008 | 0,416 | 41,6 |
-  | 1 | 0,009 | 0,451 | 45,1 |
-
-  Dürüst creator teminatı en fazla birkaç gün kilitler; kaybı teminattan bağımsız olarak yaklaşık 0,007–0,009 SOL.
-
-  **Sonuç:** İade edilen teminat **toplu kapatmayı** pahalılaştırır (sermaye teminatla doğru orantılı). Ama **tek bir
-  adın** bir haftalığına kapatılmasını neredeyse hiç pahalılaştırmaz: teminat geri döndüğü için maliyet hep yaklaşık
-  0,008 SOL. Uzun süreli kapatma için her 7 günde yeni launch gerekir (yılda ~0,4 SOL/ad). Kapatıcı, süre dolunca
-  serbest bırakma ile yeniden açmayı tek işlemde yapıp sırayı kaybetmeden devam edebilir. Bunu yalnız teminat
-  engellemez; seçenekler §14'te.
-- Kayıtlar devredilemez; kapatıcı adı güvenilir biçimde satamaz (serbest kaldığında herkes alabilir).
+  **Sonuç:** Minimum Lobby, kapatmayı gerçekten maliyetli yapan şey; teminat ise toplu kapatmanın sermayesini
+  büyütür. 1 SOL'de bir adı süresiz kapatmak ~0,05 SOL, 2 SOL'de ~0,15 SOL. Minimumu yükseltmek kapatmayı karesel
+  pahalılaştırır ama her gerçek launch'ın bu tutarı en fazla 1 saatlik Lobby'de toplamasını şart koşar.
+- Kayıtlar devredilemez; kapatıcı adı güvenilir biçimde satamaz.
 - Henüz yok: Metaplex token metadata'sı (ad, sembol, görsel). Benzer görünen harfler (ör. Kiril `а` / Latin `a`) ve
   dile özgü harf dönüşümleri (Türkçe `İ`/`i`) ayrı ad sayılır.
 
@@ -498,9 +487,9 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
      ([`programs/herdcall-tests`](../programs/herdcall-tests), LiteSVM, `npm run test:program`) derlenmiş programı
      çalıştırır ve her sonucu çekirdekle karşılaştırır: tam yaşam döngüsü, zaman ve aşama kuralları, boş Lobby, kayma
      limiti, sahte hesaplar, cüzdan ve Lobby sınırları, kira tabanı. Programa bilerek eklenen 9 hatanın 9'unu yakalar.
-   - ✅ **Ad ve ticker rezervasyonu** (§12): ikisi de benzersiz; breakout'ta kalıcı; yalnızca launch artık breakout
-     yapamayacakken (iptal veya curve süresi dolup yalnızca satış) serbest; iade edilebilir teminat ve simülasyonu.
-     Uçtan uca testler; bilerek eklenen 8 hatanın 8'ini yakalar.
+   - ✅ **Ad ve ticker rezervasyonu** (§12): ikisi de benzersiz; breakout'ta kalıcı; yalnızca iptal edilen launch'ta
+     serbest; curve'de süre sınırı yok; minimum Lobby altında curve açılmaz; iade edilebilir 0,25 SOL teminat ve
+     kapatma simülasyonu. Uçtan uca testler; bilerek eklenen hataların hepsini yakalar.
    - ⏳ Meteora DAMM v2 havuzunun açılması ve LP'nin kalıcı kilidi (breakout şimdilik fonları ayırıp `Migrating`
      aşamasında bekler), Metaplex token metadata'sı, devnet kurulumu ve devnet'te aynı testler.
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
@@ -529,9 +518,8 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
 - **Limit fiyat (v2 adayı):** "En fazla şu mcap'e kadar alırım" emri (STAMPEDE_SPEC §11).
 - Curve: kilitli Meteora pozisyonunun ücret dağıtımı (%25 likiditeye önerisi, kalanı?), geçiş ücreti, breakout'a ulaşmayan tokendeki Stampede fazlalığı, program yükseltme yetkisi (CURVE_SPEC §10). ✅ Karar verilen: $T_0$ = 1 milyar, Meteora DAMM v2, LP kalıcı kilit.
 - Create fee miktarı
-- Ad/ticker teminatı: tutar (simülasyon §12; öneri 0,25–0,5 SOL), curve süresi (şimdilik 7 gün). Tek adın
-  kısa süreli veya sürekli kapatılmasına karşı ek önlem gerekip gerekmediği: ör. boş Lobby'de curve açılmaması
-  (adı tutmak için gerçek yatırım gerekir) veya serbest kalan adın kısa bir bekleme süresi.
+- Minimum Lobby tutarı `min_total` (simülasyon §12; öneri 1 SOL). Breakout'a ulaşmayan token için süreli kapanış
+  istenirse ayrı bir terminal durum (holder'ların çıkış yolu tanımlı) gerekir; şimdilik yok.
 - Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı
 - Operasyon tabanının aylık tutarı

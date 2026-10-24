@@ -106,7 +106,7 @@ fn full_lifecycle_matches_core() {
     assert!(!s.empty);
     let l = env.launch(&k);
     assert_eq!(l.lobby_tokens as u128, s.x);
-    assert!(!l.settled_empty);
+    assert_eq!(l.phase, Phase::Curve);
     let mut m = Market::new(curve, p.market(Kind::Bonded)).unwrap();
     assert_curve(&l, &m, "after settle");
     assert_fee_delta(&fees_before, &fee_vaults(&env, &k, None), &split_fee(s.f, Kind::Bonded, false, BPS).unwrap(), "stampede fee");
@@ -292,29 +292,40 @@ fn lobby_time_and_phase_rules() {
 }
 
 #[test]
-fn empty_lobby_refunds_through_claim_and_opens_a_fresh_curve() {
+fn a_lobby_below_the_minimum_opens_no_curve() {
     let (mut env, k) = setup(true);
     let a = env.user(5);
-    env.deposit(&k, &a, SOL / 20).unwrap(); // below min_total (0.1 SOL)
+    let b = env.user(5);
+    env.deposit(&k, &a, SOL / 2).unwrap();
+    env.deposit(&k, &b, SOL / 2 - 1).unwrap(); // one lamport below min_total (1 SOL)
     env.set_time(env.launch(&k).close_at);
+    let fees_before = fee_vaults(&env, &k, None);
     env.settle(&k, &a).unwrap();
     let l = env.launch(&k);
-    assert!(l.settled_empty);
+    assert_eq!(l.phase, Phase::Cancelled);
     assert_eq!((l.lobby_tokens, l.v, l.t, l.reserve, l.sold), (0, example_params().v0, example_params().t0, 0, 0));
-    let before = env.lamports(&pk(&a.pubkey()));
-    env.claim(&k, &a).unwrap();
-    // The claim also opens the token account (rent) even though no tokens arrive.
-    let ata_rent = env.rent(&ata(&pk(&a.pubkey()), &k.mint));
-    assert_eq!(env.lamports(&pk(&a.pubkey())) + TX_FEE + ata_rent - before, SOL / 20);
-    assert_eq!(env.token_balance(&ata(&pk(&a.pubkey()), &k.mint)), 0);
-    expect_err(env.claim(&k, &a), "AlreadyWithdrawn");
+    assert_fee_delta(&fees_before, &fee_vaults(&env, &k, None), &FeeParts::default(), "no fee on a cancelled Lobby");
 
-    // The curve trades from its start.
-    let (_, curve) = core_settle(&example_params().lobby(), 0).unwrap();
-    let mut m = Market::new(curve, example_params().market(Kind::Bonded)).unwrap();
-    m.buy_exact_in(SOL as u128, 1, false).unwrap();
-    env.buy_exact_in(&k, &a, SOL, 1, None).unwrap();
-    assert_curve(&env.launch(&k), &m, "first buy");
+    // No curve: no trading, no claims; everyone is refunded in full right away.
+    expect_err(env.buy_exact_in(&k, &a, SOL, 1, None), "TradingClosed");
+    expect_err(env.claim(&k, &a), "NotSettled");
+    expect_err(env.settle(&k, &a), "LobbyClosed");
+    for (u, d) in [(&a, SOL / 2), (&b, SOL / 2 - 1)] {
+        let before = env.lamports(&pk(&u.pubkey()));
+        env.refund(&k, u).unwrap();
+        assert_eq!(env.lamports(&pk(&u.pubkey())) + TX_FEE - before, d);
+    }
+    assert_eq!(env.lamports(&k.sol_vault), env.rent(&k.sol_vault));
+}
+
+#[test]
+fn a_lobby_at_the_minimum_opens_the_curve() {
+    let (mut env, k) = setup(true);
+    let a = env.user(5);
+    env.deposit(&k, &a, SOL).unwrap();
+    env.set_time(env.launch(&k).close_at);
+    env.settle(&k, &a).unwrap();
+    assert_eq!(env.launch(&k).phase, Phase::Curve);
 }
 
 #[test]

@@ -37,15 +37,14 @@ pub struct LaunchParams {
     pub lp_supply: u64,
     pub fee_bps: u16,
     pub min_deposit: u64,
+    /// The curve opens only if the Lobby reaches this; below it the launch is cancelled, everyone is refunded and the
+    /// name and ticker are released. This is what keeps a name from being held with an empty Lobby.
     pub min_total: u64,
     pub max_total: u64,
     /// 0 = no per-wallet cap.
     pub max_per_wallet: u64,
     pub migration_fee: u64,
     pub settle_window: i64,
-    /// Buys stay open this long after the Lobby closes. A token that has not broken out by then only takes sells,
-    /// can never break out, and its name and ticker can be released.
-    pub curve_lifetime_secs: i64,
     /// Refundable reservation bond (lamports) for the name and ticker; back to the creator at breakout or release.
     pub name_bond: u64,
 }
@@ -103,14 +102,11 @@ pub struct Launch {
     pub name: String,
     pub close_at: i64,
     pub settle_deadline: i64,
-    /// No buys from this time on unless the token has already reached breakout.
-    pub curve_deadline: i64,
     /// Reservation bond still held in the ticker record (0 once it is paid back).
     pub name_bond: u64,
     // Lobby
     pub total_deposits: u64,
     pub depositors: u32,
-    pub settled_empty: bool,
     pub lobby_tokens: u64,
     pub lobby_tokens_claimed: u64,
     // Curve (CURVE_SPEC §2)
@@ -142,9 +138,9 @@ impl Launch {
 
     pub fn name_status(&self, now: i64) -> LaunchStatus {
         match self.phase {
-            Phase::Lobby if now >= self.settle_deadline => LaunchStatus::LobbyExpired,
+            Phase::Lobby if now >= self.settle_deadline => LaunchStatus::Cancelled,
             Phase::Lobby => LaunchStatus::Lobby,
-            Phase::Cancelled => LaunchStatus::LobbyExpired,
+            Phase::Cancelled => LaunchStatus::Cancelled,
             Phase::Curve => LaunchStatus::Curve,
             Phase::BreakingOut | Phase::Migrating | Phase::Migrated => LaunchStatus::BrokeOut,
         }
@@ -190,8 +186,8 @@ pub struct Deposit {
     pub bump: u8,
 }
 
-/// Reservation of one canonical name or ticker. Held by `launch` while it can still break out, permanent once it does;
-/// otherwise anyone can close it when the launch can no longer break out (rent and bond go back to the creator).
+/// Reservation of one canonical name or ticker. Held by `launch` from its creation, permanent once it breaks out;
+/// anyone can close it when the launch is cancelled (rent and bond go back to the creator).
 #[account]
 #[derive(InitSpace)]
 pub struct NameRecord {

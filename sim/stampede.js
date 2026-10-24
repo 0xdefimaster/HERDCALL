@@ -134,14 +134,16 @@ export class Lobby {
     if (!r.empty && r.X * this.minDeposit < this.total) throw new Error('allocation granularity violated');
     this.result = r;
     if (r.empty) {
+      // Below the minimum: no curve opens, the launch is cancelled and everyone is refunded (STAMPEDE_SPEC §4.1).
       this.curve = new CurveState({ v: this.v0, t: this.t0 });
-    } else {
-      // Re-anchored curve: opens at the Lobby price, holds the Lobby's net native as real reserve.
-      this.curve = new CurveState({ v: this.v0 + r.N, t: this.t0 - r.X, reserve: r.N, sold: r.X });
-      this.escrowNative -= r.N + r.F;
-      this.feesOut = r.F;
-      this.escrowToken = r.X;
+      this.terminal = State.Cancelled;
+      return r;
     }
+    // Re-anchored curve: opens at the Lobby price, holds the Lobby's net native as real reserve.
+    this.curve = new CurveState({ v: this.v0 + r.N, t: this.t0 - r.X, reserve: r.N, sold: r.X });
+    this.escrowNative -= r.N + r.F;
+    this.feesOut = r.F;
+    this.escrowToken = r.X;
     this.terminal = State.Settled;
     return r;
   }
@@ -159,15 +161,11 @@ export class Lobby {
     if (d === 0n) throw new Error('nothing to claim');
     if (this.withdrawn.has(addr)) throw new Error('already withdrawn');
     this.withdrawn.add(addr);
-    const { X, empty } = this.result;
-    const q = (d * X) / this.total;
-    const r = empty ? d : 0n;
+    const q = (d * this.result.X) / this.total;
     this.escrowToken -= q;
-    this.escrowNative -= r;
     this.paidToken += q;
-    this.paidNative += r;
-    onTransfer?.(addr, q, r);
-    return { tokens: q, refund: r };
+    onTransfer?.(addr, q, 0n);
+    return { tokens: q, refund: 0n };
   }
 
   refund(addr, onTransfer) {

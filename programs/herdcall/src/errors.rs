@@ -48,10 +48,8 @@ pub enum HerdError {
     InvalidName,
     #[msg("Name hash does not match the name")]
     NameHashMismatch,
-    #[msg("Name and ticker are still held by a launch that can break out")]
+    #[msg("Name and ticker are held until the launch is cancelled or breaks out")]
     NameNotReleasable,
-    #[msg("The curve deadline has passed: sells only")]
-    BuysClosed,
 }
 
 pub fn core_err(e: herdcall_core::Error) -> Error {

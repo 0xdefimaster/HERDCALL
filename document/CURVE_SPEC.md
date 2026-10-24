@@ -46,7 +46,7 @@ belgedeki tablolar bu değerle güncellendi.
 ## 2. Curve durumu ve değişmezler
 
 Durum Stampede şartnamesindeki gibidir: sanal rezervler $v, t$, sabit $k$, gerçek rezerv $R$ ve satılmış token $s$.
-Stampede sonunda $v = V_0 + N$, $t = T_0 - X$, $R = N$, $s = X$, $k = v \cdot t$ (boş Lobby'de $N = X = 0$).
+Stampede sonunda $v = V_0 + N$, $t = T_0 - X$, $R = N$, $s = X$, $k = v \cdot t$ (boş Lobby'de curve açılmaz, launch iptal olur).
 
 | # | Değişmez | Neden geçerli |
 |---|---|---|
@@ -144,11 +144,10 @@ LP'ye yetecek token olmayabilir ve DEX **daha yüksek** fiyattan açılır: 186 
 DEX hiçbir zaman curve'ün altından açılmaz; holder breakout'ta değer kaybetmez. v0.1 önerisi $T_0 = S_{total}$:
 fiyat sıçraması yok, fazla token yakılır.
 
-**5.6 Breakout'a hiç ulaşmayan token.** Alım, Lobby kapanışından itibaren **curve süresi** boyunca açıktır
-(`curve_lifetime_secs`, şimdilik 7 gün). Bu sürede breakout'a ulaşmayan token'da alım kapanır; satış süresiz açık
-kalır, herkes her an curve fiyatından satabilir (C4). Alım olmadan breakout imkânsızdır; ad ve ticker rezervasyonu
-ancak bu durumda serbest kalır (HERDCALL.md §12). Süre dolmadan breakout'a ulaşan (BreakingOut) token'ın breakout'u
-süre dolduktan sonra da çağrılabilir. Stampede'nin tek
+**5.6 Breakout'a hiç ulaşmayan token.** Curve süresiz açık kalır; alım ve satım her an açıktır (C4). Süreli bir
+kapanış (alımların kapanması) kararlaştırılmadı; istenirse eski token'ın artık breakout yapamayacağı ve holder'ların
+çıkış yolunun tanımlandığı ayrı bir terminal durum gerekir. Ad ve ticker böyle bir token'da süresiz ayrılı kalır
+(HERDCALL.md §12). Stampede'nin tek
 fiyatı, rezervde $N^2/(V_0 + 2N)$ kadar bir fazlalık bırakır (herkes satsa bile curve'de kalır; 80 native'lik
 Lobby'de 20 native'in üzerinde). Bu fazlalık breakout'ta LP'ye gider; breakout olmazsa curve'de kalır (§10).
 

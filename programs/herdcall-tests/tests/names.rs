@@ -1,5 +1,5 @@
-//! Name and ticker reservation: both unique, held while the launch can break out, permanent at breakout, released
-//! (bond back) only once the launch can never break out.
+//! Name and ticker reservation: both unique, held from creation, permanent at breakout, released (bond back) only
+//! when the launch is cancelled. A token on the curve keeps them with no time limit.
 mod common;
 
 use common::*;
@@ -86,7 +86,6 @@ fn only_valid_tickers_and_names() {
     let k = env.create_launch_full(true, 60, "PEPE2", "  Pepe Two ").unwrap();
     let l = env.launch(&k);
     assert_eq!((l.ticker.as_str(), l.name.as_str()), ("PEPE2", "  Pepe Two "));
-    assert_eq!(l.curve_deadline, l.close_at + example_params().curve_lifetime_secs);
     held_by(&env, &k, false);
 }
 
@@ -125,15 +124,18 @@ fn a_launch_that_can_break_out_keeps_its_name() {
     env.set_time(env.launch(&k).settle_deadline - 1);
     expect_err(env.release_name(&k, &anyone), "NameNotReleasable");
 
+    // On the curve there is no time limit: a year later buys are open and the name is still held.
     let (c, u) = on_curve(&mut env, "WIF", "Dog Hat");
-    env.set_time(env.launch(&c).curve_deadline - 1);
+    expect_err(env.release_name(&c, &anyone), "NameNotReleasable");
+    env.set_time(env.now + 365 * 24 * 3600);
     expect_err(env.release_name(&c, &anyone), "NameNotReleasable");
     env.buy_exact_in(&c, &u, SOL, 1, None).unwrap();
     held_by(&env, &c, false);
+    expect_err(env.create_launch_full(true, 60, "WIF", "Other"), "already in use");
 }
 
 #[test]
-fn a_cancelled_launch_frees_name_and_ticker_and_returns_the_bond() {
+fn an_unsettled_lobby_frees_name_and_ticker_and_returns_the_bond() {
     let mut env = env();
     let k = env.create_launch_full(true, 60, "PEPE", "Pepe Coin").unwrap();
     let u = env.user(5);
@@ -155,33 +157,30 @@ fn a_cancelled_launch_frees_name_and_ticker_and_returns_the_bond() {
 }
 
 #[test]
-fn after_the_curve_deadline_it_only_takes_sells_and_frees_its_name() {
+fn a_lobby_below_the_minimum_frees_name_and_ticker_at_once() {
     let mut env = env();
-    let (old, u) = on_curve(&mut env, "PEPE", "Pepe Coin");
-    env.buy_exact_in(&old, &u, 5 * SOL, 1, None).unwrap();
-    env.set_time(env.launch(&old).curve_deadline);
-
-    // No buys from now on, so it can never reach breakout. Holders can still sell at the curve price.
-    expect_err(env.buy_exact_in(&old, &u, SOL, 1, None), "BuysClosed");
-    expect_err(env.buy_exact_out(&old, &u, u64::MAX, u64::MAX, None), "BuysClosed");
-    let tokens = env.token_balance(&ata(&pk(&u.pubkey()), &old.mint));
-    env.sell(&old, &u, tokens / 2, 1, None).unwrap();
-    expect_err(env.breakout(&old, &u), "NotBreakingOut");
-
+    let k = env.create_launch_full(true, 60, "PEPE", "Pepe Coin").unwrap();
+    let u = env.user(5);
+    env.deposit(&k, &u, example_params().min_total - 1).unwrap();
+    env.set_time(env.launch(&k).close_at);
     let anyone = env.user(1);
-    let creator = pk(&old.creator.pubkey());
-    let before = env.lamports(&creator);
-    let held = env.lamports(&old.ticker_record) + env.lamports(&old.name_record);
-    env.release_name(&old, &anyone).unwrap();
-    released(&env, &old);
-    assert_eq!(env.lamports(&creator) - before, held);
-    expect_err(env.release_name(&old, &anyone), "AccountNotInitialized");
+    // Still in the Lobby: held until settlement decides.
+    expect_err(env.release_name(&k, &anyone), "NameNotReleasable");
+    env.settle(&k, &anyone).unwrap();
+    assert_eq!(env.launch(&k).phase, Phase::Cancelled);
 
-    // A new launch takes the name and ticker; the old one keeps only its sells.
-    let new = env.create_launch_full(true, 60, "PEPE", "PEPE COIN").unwrap();
-    held_by(&env, &new, false);
-    env.sell(&old, &u, tokens / 4, 1, None).unwrap();
-    expect_err(env.buy_exact_in(&old, &u, SOL, 1, None), "BuysClosed");
+    // Released right after the settlement, long before the settlement deadline.
+    assert!(env.now < env.launch(&k).settle_deadline);
+    let creator = pk(&k.creator.pubkey());
+    let held = env.lamports(&k.ticker_record) + env.lamports(&k.name_record);
+    let before = env.lamports(&creator);
+    env.release_name(&k, &anyone).unwrap();
+    released(&env, &k);
+    assert_eq!(env.lamports(&creator) - before, held);
+    expect_err(env.release_name(&k, &anyone), "AccountNotInitialized");
+    env.refund(&k, &u).unwrap();
+    let k2 = env.create_launch_full(true, 60, "PEPE", "PEPE COIN").unwrap();
+    held_by(&env, &k2, false);
 }
 
 #[test]
@@ -190,8 +189,7 @@ fn breakout_makes_name_and_ticker_permanent_and_returns_the_bond() {
     let (k, u) = on_curve(&mut env, "HERD", "Herd Coin");
     env.buy_exact_out(&k, &u, u64::MAX, u64::MAX, None).unwrap();
     assert_eq!(env.launch(&k).phase, Phase::BreakingOut);
-    // Reached breakout before the deadline: the breakout itself may come later, and the name stays held meanwhile.
-    env.set_time(env.launch(&k).curve_deadline + 1);
+    // Reached breakout: the breakout call may come later, and the name stays held meanwhile.
     let anyone = env.user(1);
     expect_err(env.release_name(&k, &anyone), "NameNotReleasable");
 

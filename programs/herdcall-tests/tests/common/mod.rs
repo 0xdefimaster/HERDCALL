@@ -32,13 +32,12 @@ pub fn example_params() -> LaunchParams {
         lp_supply: 200_000_000 * TOKEN,
         fee_bps: 100,
         min_deposit: SOL / 100,
-        min_total: SOL / 10,
+        min_total: SOL,
         max_total: 10_000 * SOL,
         max_per_wallet: 0,
         migration_fee: SOL / 50,
         settle_window: 300,
-        curve_lifetime_secs: 7 * 24 * 3600,
-        name_bond: SOL / 2,
+        name_bond: SOL / 4,
     }
 }
 

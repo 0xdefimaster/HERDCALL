@@ -29,7 +29,8 @@ function runLobby(deposits, overrides = {}) {
   for (const [addr, amount] of deposits) lobby.deposit(addr, amount, OPEN);
   const result = lobby.settle(AT_SETTLE);
   const claims = new Map();
-  for (const addr of lobby.deposits.keys()) claims.set(addr, lobby.claim(addr));
+  // An empty Lobby is cancelled: deposits come back through refund.
+  for (const addr of lobby.deposits.keys()) claims.set(addr, result.empty ? lobby.refund(addr) : lobby.claim(addr));
   return { lobby, result, claims };
 }
 
@@ -113,6 +114,8 @@ test('zero and below-minimum demand: empty settlement, full refunds, curve untou
   assert.equal(zero.curve.reserve, 0n);
   const run = runLobby([['a', EXAMPLE.minDeposit], ['b', EXAMPLE.minDeposit]]);
   assert.equal(run.result.empty, true);
+  assert.equal(run.lobby.terminal, State.Cancelled);
+  assert.throws(() => run.lobby.claim('a'), /not settled/);
   checkInvariants(run);
 });
 

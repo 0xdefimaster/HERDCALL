@@ -34,7 +34,7 @@ açıldığı fiyattan** girer. İade yoktur (yalnızca boş Lobby'de). Reddedil
 | $f$ | İşlem ücreti, baz puan (bps) | 100 (= %1) |
 | $B$ | Baz puan paydası | 10.000 |
 | $d_{min}$ | Tek bir yatırmanın alt sınırı | 0,01 native |
-| $D_{min}$ | Settlement için toplam talep alt sınırı | 0,1 native |
+| $D_{min}$ | Curve'ün açılması için toplam talep alt sınırı | 0,1 native (simülasyon); program önerisi 1 SOL (HERDCALL.md §12) |
 | $D_{max}$ | Lobby'nin toplam talep üst sınırı | 10.000 native |
 | $w_{max}$ | Cüzdan başı üst sınır (0 = yok) | 0 |
 | $t_{close}$ | Lobby'nin kapanış zamanı (geri sayımın sonu) | açılış + 15/30/60 sn |
@@ -110,8 +110,9 @@ durum olur: yarım kalan adımlar fonlara dokunmaz, tüm fon hareketleri son ad�
 `settle()` yalnızca toplamlarla çalışır ve katılımcılar üzerinde döngü yapmaz.
 
 **4.1 Boş ya da yetersiz talep.** $D < D_{min}$ ise (ya da hesaplanan $X = 0$ ise): hiçbir fon curve'e gitmez,
-ücret alınmaz, herkes yatırdığının **tamamını** geri alır. Lobby yine **Settled** olur ve curve Lobby öncesi
-durumdan açılır. Test: `zero and below-minimum demand`.
+ücret alınmaz, **curve açılmaz**: launch **Cancelled** olur ve herkes `refund` ile yatırdığının **tamamını** geri alır.
+Ad ve ticker rezervasyonu hemen serbest bırakılabilir (HERDCALL.md §12). $D_{min}$ böylece bir adı boş Lobby ile
+tutmayı da engeller. Test: `zero and below-minimum demand`.
 
 **4.2 Ücret ve net tutar.** Havuzun tamamı harcanır; iade yoktur:
 
@@ -169,7 +170,7 @@ escrow'una (claim'ler için); curve $(v_1, t_1, k_1, R_1, s_1)$ durumuyla işlem
 
 $$q_i = \left\lfloor \frac{d_i \cdot X}{D} \right\rfloor \text{ token}$$
 
-Boş Lobby'de (§4.1) $q_i = 0$ ve iade $= d_i$. Cancelled durumunda `refund` $d_i$'nin tamamını iade eder.
+Boş Lobby (§4.1) Cancelled olur; Cancelled durumunda `refund` $d_i$'nin tamamını iade eder.
 Tahsis yalnızca $d_i$'ye ve toplamlara bağlıdır: **yatırma sırası sonucu değiştirmez.**
 
 **5.2 Çift çekim ve yeniden giriş.**
@@ -231,7 +232,7 @@ Her invariant `sim/stampede.test.js` içinde otomatik kontrol edilir (15 test). 
 | I10 | Durum dışlaması | Cancelled settle edilemez; Settled iptal edilemez; pencereler ayrık | state machine |
 | I11 | Fiyat sürekliliği | $0 \le N t_1 - X v_1 < V_0 + 2N$; zilden sonraki ilk alım Lobby fiyatının üstünde | fuzz, continuity |
 | I12 | Taneciklik | $d_i \ge d_{min}$ olan herkes $q_i \ge 1$ alır; aksi halde settle reddedilir | fuzz, granularity guard |
-| I13 | Boş Lobby | $D < D_{min}$: ücret yok, herkese tam iade, curve dokunulmamış | zero-demand |
+| I13 | Boş Lobby | $D < D_{min}$: ücret yok, curve açılmaz (Cancelled), herkese tam iade | zero-demand |
 | I14 | Tek çekim | Her adres bir kez çeker; transfer sırasındaki yeniden claim reddedilir | claims |
 | I15 | Kilitli fon yok | Tüm claim/refund'lardan ve sweep'ten sonra escrow $= 0$ | state machine, claims |
 | I16 | Ödeme gücü | Fazlalık $\ge 0$ ve hiçbir işlemde azalmaz; $v t \ge k$; herkes her şeyi satabilir | solvency, CurveState |
