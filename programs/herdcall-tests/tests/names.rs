@@ -259,3 +259,15 @@ fn release_needs_the_matching_records_and_creator() {
     send(&mut env, base(&a)).unwrap();
     released(&env, &a);
 }
+
+/// The web client hashes names the same way (scripts/herdcall-client.test.mjs reads the same file).
+#[test]
+fn name_hashes_match_the_shared_vectors() {
+    let raw = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../idl/name-vectors.json")).unwrap();
+    let vectors: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    for v in vectors.as_array().unwrap() {
+        let name = v["name"].as_str().unwrap();
+        let got: String = name_seed(name).unwrap().iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(got, v["sha256"].as_str().unwrap(), "{name:?}");
+    }
+}

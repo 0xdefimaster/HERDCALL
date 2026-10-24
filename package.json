@@ -19,6 +19,10 @@
     "sim:curve": "node sim/curve-run.js",
     "sim:names": "node sim/name-bond-run.js",
     "vectors": "node sim/vectors.js",
+    "idl": "node programs/idl/build.mjs",
+    "test:client": "node --test scripts/herdcall-client.test.mjs",
+    "validator:local": "scripts/local-validator.sh",
+    "flow": "node scripts/launch-flow.mjs",
     "test:core": "cd programs/herdcall-core && cargo test",
     "test:program": "cd programs && (ls fixtures/*.so >/dev/null 2>&1 || ./fixtures/fetch.sh) && cargo build-sbf --manifest-path herdcall/Cargo.toml && cargo test -p herdcall-tests"
   },
@@ -32,6 +36,7 @@
     "react-router-dom": "^6.30.3"
   },
   "devDependencies": {
+    "@anchor-lang/core": "1.2.1",
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
     "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.24",

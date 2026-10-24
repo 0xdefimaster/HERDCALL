@@ -35,7 +35,7 @@ pub fn example_params() -> LaunchParams {
         min_total: SOL,
         max_total: 10_000 * SOL,
         max_per_wallet: 0,
-        migration_fee: SOL / 50,
+        migration_fee: 3 * SOL / 100,
         settle_window: 300,
         name_bond: SOL / 4,
     }

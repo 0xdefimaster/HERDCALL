@@ -310,8 +310,8 @@ pub mod herdcall {
 
     /// Permissionless, once. Opens the Meteora DAMM v2 pool at the curve's final price with the reserve and the LP
     /// tokens, locks the whole position for good (it keeps earning fees; its NFT stays with the launch PDA) and burns
-    /// the LP tokens the pool does not need (CURVE_SPEC §5.4). The migration fee pays the pool's rent; what is left of it
-    /// goes to the keeper.
+    /// the LP tokens the pool does not need (CURVE_SPEC §5.4). The migration fee pays the pool's rent and the keeper
+    /// keeps the rest; the keeper fronts `BREAKOUT_FLOAT` for the length of the call and gets it back.
     pub fn breakout(ctx: Context<Breakout>) -> Result<()> {
         require!(ctx.accounts.launch.phase == Phase::BreakingOut, HerdError::NotBreakingOut);
         let migrator_key = ctx.accounts.migrator.key();
@@ -363,6 +363,11 @@ pub mod herdcall {
         pay_from_vault(&sol_vault, &migrator, lp_native.checked_add(keeper_fee).ok_or(HerdError::MathOverflow)?)?;
         transfer_signed(system, &migrator, &sol_vault, 0, migrator_seeds)?;
         transfer_signed(system, &migrator, &a.migrator_wsol.to_account_info(), lp_native, migrator_seeds)?;
+        // The keeper fronts a float so the pool's rent is covered even if it grows; it comes back below.
+        system_program::transfer(
+            CpiContext::new(system, system_program::Transfer { from: a.keeper.to_account_info(), to: migrator.clone() }),
+            BREAKOUT_FLOAT,
+        )?;
         token::sync_native(CpiContext::new(token_program, SyncNative { account: a.migrator_wsol.to_account_info() }))?;
 
         // Pool at the curve's final price; the launch PDA owns the position NFT.

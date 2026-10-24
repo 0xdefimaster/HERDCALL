@@ -450,6 +450,12 @@ bağlanır; Lobby iptal olursa serbest kalır. Curve'de süre sınırı yok.
 - `programs/herdcall-tests`: derlenmiş programı LiteSVM'de çalıştıran uçtan uca testler (`npm run test:program`).
   Metaplex ve Meteora DAMM v2 programlarının gerçek ikili dosyalarını yükler; `programs/fixtures/fetch.sh` bunları
   mainnet'ten indirir ve sha256 ile doğrular.
+- `programs/idl/herdcall.json`: Anchor IDL (`npm run idl`, Anchor CLI gerekmez). `scripts/herdcall-client.mjs`: adresler,
+  ad hash'i ve hesap listeleri; web istemcisi bunun üzerine kurulacak. Ad hash'i program ile aynı test vektörleriyle
+  doğrulanır (`npm run test:client`).
+- Yerel tam akış: `npm run validator:local` (mainnet derlemesi + özel config; `DEVNET=1` ile devnet derlemesi), sonra
+  `npm run flow -- --url http://127.0.0.1:8899 --keypair <cüzdan> --dex-config AeLtDKgw3XnXbr3Kgfbcb7KiZULVCQ5mXaFDiG9n7EgW
+  --params example`. Devnet: `scripts/devnet.sh`.
 - Programı derlemek ve yerel olarak test etmek için Solana CLI, `cargo build-sbf` ve Anchor gerekir; LiteSVM 0.18
   Rust 1.97.1 veya üstünü ister. Bulut ortamında bunların indirilmesi için ağ ayarlarında `release.anza.xyz` ve
   `github.com` alan adlarına izin verilmeli.
@@ -497,8 +503,14 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
    - ✅ **Meteora DAMM v2 breakout** (CURVE_SPEC §5.4): havuz curve'ün son fiyatından açılır, pozisyonun tamamı kalıcı
      kilitlenir, NFT launch PDA'sında kalır. Testler mainnet'ten alınmış gerçek DAMM v2 programıyla: havuzda gerçek
      swap, havuzu önceden açma saldırısı, yanlış config ve sahte hesaplar. Bilerek eklenen 6 hatanın 6'sı yakalanır.
+   - ✅ **Gerçek doğrulayıcıda tam akış** (`scripts/launch-flow.mjs`): yerel test doğrulayıcısında gerçek Metaplex ve
+     DAMM v2 programlarıyla çalışır. Adımlar: kurulum, launch, Lobby, settle, claim, curve'ün tamamı, breakout, kilitli
+     havuz. Hem mainnet derlemesi + özel config hem devnet derlemesi + herkese açık config ile geçti. İstemci IDL'den
+     çalışır (`npm run idl`, `programs/idl/herdcall.json`).
+   - ⏳ **Devnet:** `scripts/devnet.sh` hazır (config bulma, devnet derlemesi, yükleme, tam akış). Bu oturumun ağ
+     politikası `api.devnet.solana.com`'a izin vermediği için henüz çalıştırılmadı; yaklaşık 8 devnet SOL gerekir.
    - ⏳ Meteora'dan HerdCall migrator PDA'sı için **özel config** (mainnet şartı), kilitli pozisyonun ücretlerinin
-     toplanıp dağıtılması (CURVE_SPEC §5.7), devnet kurulumu ve devnet'te aynı akış.
+     toplanıp dağıtılması (CURVE_SPEC §5.7).
    - ✅ **Metaplex token metadata** (§12): değiştirilemez ad, sembol, URI; testler gerçek Metaplex programıyla.
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
    açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda. İsteğe bağlı **Creator Bounty** (§4).

@@ -142,7 +142,10 @@ Bu bilinçli bir sonuçtur: Lobby fiyatı yükseldikçe curve'ün tamamı ölçe
 - Havuzun almadığı birkaç token birimi yakılır.
 - Fiyat aralığının alt sınırı yüzünden SOL'ün yaklaşık $10^{-8}$'i (120 SOL'de ~1.100 lamport) havuza girmez; bu kısım
   protokol kasasına gider.
-- Geçiş ücreti $m$ = 0,02 SOL havuzun kirasını öder (ölçülen: 0,0165 SOL); kalanı breakout'u çağırana gider.
+- Geçiş ücreti $m$ = 0,03 SOL havuzun kirasını öder; kalanı breakout'u çağırana gider. Yerel doğrulayıcıda
+  ölçülen kira 0,0226 SOL, çağıranın net kazancı 0,0074 SOL. Kira değişirse breakout yine de çalışır: çağıran işlem
+  süresince 0,05 SOL avans koyar ve aynı işlemde geri alır.
+- Breakout tek işlemdir: 174.687 compute birimi, 26 hesap, 977 bayt (sınır 1.232).
 
 **Havuzu önceden açma saldırısı.** DAMM'da config tabanlı havuzun adresi `["pool", config, mint'ler]`'dir. Herkese açık
 bir config'te, curve'den birkaç token alan biri bu havuzu breakout'tan önce açıp breakout'u kalıcı olarak kilitleyebilir
@@ -316,7 +319,7 @@ yaratır; v0.1 bunun yerine yakmayı seçer.
 - **Havuz ayarları:** ✅ ücret yalnızca SOL'den, tam fiyat aralığı, sabit ücret en fazla %2 (§5.4). **Açık:** ücret oranı
   (test config'i %1) ve Meteora'nın bu ücretteki protokol payı; ikisi de Meteora'nın oluşturacağı özel config'te
   belirlenir.
-- **Geçiş ücreti $m$:** ✅ 0,02 SOL; ölçülen havuz kirası 0,0165 SOL, kalanı breakout'u çağıranın (§5.4).
+- **Geçiş ücreti $m$:** ✅ 0,03 SOL; ölçülen havuz kirası 0,0226 SOL, kalanı breakout'u çağıranın (§5.4).
 - **Breakout'a ulaşmayan token'daki Stampede fazlalığı** (§5.6): curve'de mi kalsın, belirli bir süre işlem görmeyen
   tokenlerde holder'lara mı dağıtılsın? Dağıtım, ölü token tanımı ve Diamond Hooves ile birlikte düşünülmeli.
 - ✅ **Program yükseltme:** Yükseltilebilir; çoklu imza + 72 saat zaman kilidi, doğrulanabilir derleme, hedef: denetim ve

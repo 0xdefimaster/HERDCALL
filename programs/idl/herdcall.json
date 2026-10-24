@@ -1,0 +1,1735 @@
+{
+  "address": "EPh2hoECkDTsSeHCriDwsF8DhVGhCjxwrbtC3qqyoJ8K",
+  "metadata": {
+    "name": "herdcall",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "HerdCall launchpad program: Lobby, Stampede, bonding curve, breakout"
+  },
+  "instructions": [
+    {
+      "name": "initialize",
+      "docs": [
+        "One-time setup: default parameters for new launches, the DAMM v2 config for breakouts and the protocol /",
+        "Rekt-back vaults."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "rekt_back",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "LaunchParams"
+            }
+          }
+        },
+        {
+          "name": "dex_config",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "create_launch",
+      "docs": [
+        "Creates the token (fixed supply, no mint or freeze authority, immutable Metaplex metadata: name, ticker as",
+        "symbol, `uri`), reserves its name and ticker against the refundable bond and opens its Lobby for `lobby_secs`",
+        "seconds. Fails if another launch holds the name or ticker. `name_hash` is `name_seed(name)`, computed by the",
+        "client to address the name record."
+      ],
+      "discriminator": [
+        239,
+        223,
+        255,
+        134,
+        39,
+        121,
+        127,
+        62
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "mint",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "launch",
+          "writable": true
+        },
+        {
+          "name": "token_vault",
+          "writable": true
+        },
+        {
+          "name": "sol_vault",
+          "writable": true
+        },
+        {
+          "name": "creator_fees",
+          "writable": true
+        },
+        {
+          "name": "creator_escrow",
+          "writable": true
+        },
+        {
+          "name": "ticker_record",
+          "writable": true
+        },
+        {
+          "name": "name_record",
+          "writable": true
+        },
+        {
+          "name": "metadata",
+          "writable": true
+        },
+        {
+          "name": "token_metadata_program"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program"
+        },
+        {
+          "name": "system_program"
+        },
+        {
+          "name": "rent"
+        }
+      ],
+      "args": [
+        {
+          "name": "bonded",
+          "type": "bool"
+        },
+        {
+          "name": "lobby_secs",
+          "type": "i64"
+        },
+        {
+          "name": "ticker",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "name_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "uri",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "deposit",
+      "docs": [
+        "Adds SOL to the Lobby pool. No trading, no withdrawals while the Lobby is open."
+      ],
+      "discriminator": [
+        242,
+        35,
+        198,
+        137,
+        82,
+        225,
+        242,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "launch",
+          "writable": true
+        },
+        {
+          "name": "sol_vault",
+          "writable": true
+        },
+        {
+          "name": "deposit",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "settle",
+      "docs": [
+        "Permissionless. The pool makes one buy at the price the curve opens at (STAMPEDE_SPEC §4); the name and ticker",
+        "become permanent and the bond goes back to the creator. A Lobby below the minimum opens no curve: the launch is",
+        "cancelled, deposits are refunded and the name and ticker can be released."
+      ],
+      "discriminator": [
+        175,
+        42,
+        185,
+        87,
+        144,
+        131,
+        102,
+        212
+      ],
+      "accounts": [
+        {
+          "name": "launch",
+          "writable": true
+        },
+        {
+          "name": "sol_vault",
+          "writable": true
+        },
+        {
+          "name": "creator_fees",
+          "writable": true
+        },
+        {
+          "name": "creator_escrow",
+          "writable": true
+        },
+        {
+          "name": "rekt_back",
+          "writable": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "ticker_record",
+          "writable": true
+        },
+        {
+          "name": "name_record",
+          "writable": true
+        },
+        {
+          "name": "creator",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim",
+      "docs": [
+        "Pull claim after the Stampede: tokens pro rata."
+      ],
+      "discriminator": [
+        62,
+        198,
+        214,
+        193,
+        213,
+        159,
+        108,
+        210
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "launch",
+          "writable": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "deposit",
+          "writable": true
+        },
+        {
+          "name": "owner"
+        },
+        {
+          "name": "sol_vault",
+          "writable": true
+        },
+        {
+          "name": "token_vault",
+          "writable": true
+        },
+        {
+          "name": "user_ata",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "refund",
+      "docs": [
+        "A cancelled Lobby (below the minimum, or not settled before its deadline): everyone takes the deposit back."
+      ],
+      "discriminator": [
+        2,
+        96,
+        183,
+        251,
+        63,
+        208,
+        46,
+        46
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "launch",
+          "writable": true
+        },
+        {
+          "name": "deposit",
+          "writable": true
+        },
+        {
+          "name": "sol_vault",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "buy_exact_in",
+      "docs": [
+        "Buys with exactly `gross` lamports (fee included); unused lamports never leave the wallet."
+      ],
+      "discriminator": [
+        250,
+        234,
+        13,
+        123,
+        213,
+        156,
+        19,
+        236
+      ],
+      "accounts": [
+        {
+          "name": "trader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "launch",
+          "writable": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "sol_vault",
+          "writable": true
+        },
+        {
+          "name": "token_vault",
+          "writable": true
+        },
+        {
+          "name": "trader_ata",
+          "writable": true
+        },
+        {
+          "name": "creator_fees",
+          "writable": true
+        },
+        {
+          "name": "creator_escrow",
+          "writable": true
+        },
+        {
+          "name": "rekt_back",
+          "writable": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "interface",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "gross",
+          "type": "u64"
+        },
+        {
+          "name": "min_tokens",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "buy_exact_out",
+      "docs": [
+        "Buys exactly `tokens` (clamped to what is left on the curve), paying at most `max_gross` lamports."
+      ],
+      "discriminator": [
+        24,
+        211,
+        116,
+        40,
+        105,
+        3,
+        153,
+        56
+      ],
+      "accounts": [
+        {
+          "name": "trader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "launch",
+          "writable": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "sol_vault",
+          "writable": true
+        },
+        {
+          "name": "token_vault",
+          "writable": true
+        },
+        {
+          "name": "trader_ata",
+          "writable": true
+        },
+        {
+          "name": "creator_fees",
+          "writable": true
+        },
+        {
+          "name": "creator_escrow",
+          "writable": true
+        },
+        {
+          "name": "rekt_back",
+          "writable": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "interface",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "tokens",
+          "type": "u64"
+        },
+        {
+          "name": "max_gross",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "sell",
+      "docs": [
+        "Sells `tokens`, receiving at least `min_received` lamports after the fee."
+      ],
+      "discriminator": [
+        51,
+        230,
+        133,
+        164,
+        1,
+        127,
+        131,
+        173
+      ],
+      "accounts": [
+        {
+          "name": "trader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "launch",
+          "writable": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "sol_vault",
+          "writable": true
+        },
+        {
+          "name": "token_vault",
+          "writable": true
+        },
+        {
+          "name": "trader_ata",
+          "writable": true
+        },
+        {
+          "name": "creator_fees",
+          "writable": true
+        },
+        {
+          "name": "creator_escrow",
+          "writable": true
+        },
+        {
+          "name": "rekt_back",
+          "writable": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "interface",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "tokens",
+          "type": "u64"
+        },
+        {
+          "name": "min_received",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_dex_config",
+      "docs": [
+        "Points future breakouts to another DAMM v2 config (for instance if Meteora retires one). It must still pass the",
+        "checks in `damm::read_config` at breakout, so the admin cannot pick a public config or a fee above 2%."
+      ],
+      "discriminator": [
+        29,
+        135,
+        205,
+        194,
+        87,
+        80,
+        59,
+        140
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "dex_config",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "breakout",
+      "docs": [
+        "Permissionless, once. Opens the Meteora DAMM v2 pool at the curve's final price with the reserve and the LP",
+        "tokens, locks the whole position for good (it keeps earning fees; its NFT stays with the launch PDA) and burns",
+        "the LP tokens the pool does not need (CURVE_SPEC §5.4). The migration fee pays the pool's rent and the keeper",
+        "keeps the rest; the keeper fronts `BREAKOUT_FLOAT` for the length of the call and gets it back."
+      ],
+      "discriminator": [
+        244,
+        236,
+        139,
+        127,
+        149,
+        5,
+        124,
+        12
+      ],
+      "accounts": [
+        {
+          "name": "keeper",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "launch",
+          "writable": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "token_vault",
+          "writable": true
+        },
+        {
+          "name": "sol_vault",
+          "writable": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "dex_config"
+        },
+        {
+          "name": "migrator",
+          "writable": true
+        },
+        {
+          "name": "migrator_token",
+          "writable": true
+        },
+        {
+          "name": "migrator_wsol",
+          "writable": true
+        },
+        {
+          "name": "native_mint"
+        },
+        {
+          "name": "position_nft_mint",
+          "writable": true
+        },
+        {
+          "name": "position_nft_account",
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "pool_token_vault",
+          "writable": true
+        },
+        {
+          "name": "pool_wsol_vault",
+          "writable": true
+        },
+        {
+          "name": "pool_authority"
+        },
+        {
+          "name": "dex_event_authority"
+        },
+        {
+          "name": "dex_program"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "token_2022_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "release_name",
+      "docs": [
+        "Permissionless. Frees the name and ticker of a cancelled launch (Lobby below the minimum, or not settled before",
+        "its deadline). Once the curve opens they are permanent. Both records close; their rent and the bond go back to",
+        "the creator."
+      ],
+      "discriminator": [
+        3,
+        68,
+        17,
+        217,
+        57,
+        53,
+        123,
+        164
+      ],
+      "accounts": [
+        {
+          "name": "ticker_record",
+          "writable": true
+        },
+        {
+          "name": "name_record",
+          "writable": true
+        },
+        {
+          "name": "launch",
+          "writable": true
+        },
+        {
+          "name": "creator",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "register_interface",
+      "docs": [
+        "Registers a trading interface that can receive the interface share of fees."
+      ],
+      "discriminator": [
+        194,
+        199,
+        158,
+        251,
+        54,
+        140,
+        46,
+        205
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "interface",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdraw_interface_fees",
+      "docs": [
+        "The interface owner withdraws accumulated fees."
+      ],
+      "discriminator": [
+        35,
+        173,
+        189,
+        88,
+        44,
+        216,
+        101,
+        6
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "interface",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdraw_creator_fees",
+      "docs": [
+        "The creator withdraws the immediately payable part of their fees (escrow rules: Bonded Creator spec)."
+      ],
+      "discriminator": [
+        8,
+        30,
+        213,
+        18,
+        121,
+        105,
+        129,
+        222
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "launch"
+        },
+        {
+          "name": "creator_fees",
+          "writable": true
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "Deposit",
+      "discriminator": [
+        148,
+        146,
+        121,
+        66,
+        207,
+        173,
+        21,
+        227
+      ]
+    },
+    {
+      "name": "Launch",
+      "discriminator": [
+        144,
+        51,
+        51,
+        163,
+        206,
+        85,
+        213,
+        38
+      ]
+    },
+    {
+      "name": "NameRecord",
+      "discriminator": [
+        254,
+        22,
+        17,
+        161,
+        229,
+        49,
+        238,
+        105
+      ]
+    },
+    {
+      "name": "TradingInterface",
+      "discriminator": [
+        148,
+        96,
+        58,
+        221,
+        53,
+        144,
+        83,
+        244
+      ]
+    },
+    {
+      "name": "Vault",
+      "discriminator": [
+        211,
+        8,
+        232,
+        43,
+        2,
+        152,
+        117,
+        119
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "BrokeOut",
+      "type": {
+        "fields": [
+          {
+            "name": "launch",
+            "type": "pubkey"
+          },
+          {
+            "name": "keeper",
+            "type": "pubkey"
+          },
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "lp_native",
+            "type": "u64"
+          },
+          {
+            "name": "lp_tokens",
+            "type": "u64"
+          },
+          {
+            "name": "burned",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "Deposited",
+      "type": {
+        "fields": [
+          {
+            "name": "launch",
+            "type": "pubkey"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "total",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "LaunchCreated",
+      "type": {
+        "fields": [
+          {
+            "name": "launch",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "bonded",
+            "type": "bool"
+          },
+          {
+            "name": "close_at",
+            "type": "i64"
+          },
+          {
+            "name": "ticker",
+            "type": "string"
+          },
+          {
+            "name": "name",
+            "type": "string"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "NameReleased",
+      "type": {
+        "fields": [
+          {
+            "name": "launch",
+            "type": "pubkey"
+          },
+          {
+            "name": "ticker",
+            "type": "string"
+          },
+          {
+            "name": "name",
+            "type": "string"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "Settled",
+      "type": {
+        "fields": [
+          {
+            "name": "launch",
+            "type": "pubkey"
+          },
+          {
+            "name": "total",
+            "type": "u64"
+          },
+          {
+            "name": "lobby_tokens",
+            "type": "u64"
+          },
+          {
+            "name": "net",
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "empty",
+            "type": "bool"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "Config",
+      "docs": [
+        "Parameters every new launch copies. Changing them never affects an existing launch."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "params",
+            "type": {
+              "defined": {
+                "name": "LaunchParams"
+              }
+            }
+          },
+          {
+            "name": "dex_config",
+            "docs": [
+              "Meteora DAMM v2 config breakouts create their pool with (checked at breakout, see `damm::read_config`)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Deposit",
+      "docs": [
+        "Lobby deposit of one wallet. Deposits of the same wallet add up."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "launch",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "withdrawn",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Launch",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "bonded",
+            "type": "bool"
+          },
+          {
+            "name": "phase",
+            "type": {
+              "defined": {
+                "name": "Phase"
+              }
+            }
+          },
+          {
+            "name": "params",
+            "type": {
+              "defined": {
+                "name": "LaunchParams"
+              }
+            }
+          },
+          {
+            "name": "ticker",
+            "type": "string"
+          },
+          {
+            "name": "name",
+            "docs": [
+              "As given by the creator, without leading and trailing whitespace; uniqueness is checked on its canonical form",
+              "(`herdcall_core::names::canonical_name`)."
+            ],
+            "type": "string"
+          },
+          {
+            "name": "close_at",
+            "type": "i64"
+          },
+          {
+            "name": "settle_deadline",
+            "type": "i64"
+          },
+          {
+            "name": "name_bond",
+            "docs": [
+              "Reservation bond still held in the ticker record (0 once it is paid back at settlement or release)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_deposits",
+            "type": "u64"
+          },
+          {
+            "name": "depositors",
+            "type": "u32"
+          },
+          {
+            "name": "lobby_tokens",
+            "type": "u64"
+          },
+          {
+            "name": "lobby_tokens_claimed",
+            "type": "u64"
+          },
+          {
+            "name": "v",
+            "type": "u64"
+          },
+          {
+            "name": "t",
+            "type": "u64"
+          },
+          {
+            "name": "k",
+            "type": "u128"
+          },
+          {
+            "name": "reserve",
+            "type": "u64"
+          },
+          {
+            "name": "sold",
+            "type": "u64"
+          },
+          {
+            "name": "lock_ratio_bps",
+            "docs": [
+              "Creator lock ratio (\"hold to earn\"); 10_000 until the Bonded Creator vault is wired in."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "lp_native",
+            "docs": [
+              "SOL and tokens in the pool, and its locked liquidity."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "lp_tokens",
+            "type": "u64"
+          },
+          {
+            "name": "lp_liquidity",
+            "type": "u128"
+          },
+          {
+            "name": "burned",
+            "docs": [
+              "LP tokens the pool did not need, burned."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "dex_pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "dex_position",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "sol_vault_bump",
+            "type": "u8"
+          },
+          {
+            "name": "creator_fees_bump",
+            "type": "u8"
+          },
+          {
+            "name": "creator_escrow_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LaunchParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "v0",
+            "type": "u64"
+          },
+          {
+            "name": "t0",
+            "type": "u64"
+          },
+          {
+            "name": "total_supply",
+            "type": "u64"
+          },
+          {
+            "name": "curve_supply",
+            "type": "u64"
+          },
+          {
+            "name": "lp_supply",
+            "type": "u64"
+          },
+          {
+            "name": "fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "min_deposit",
+            "type": "u64"
+          },
+          {
+            "name": "min_total",
+            "docs": [
+              "The curve opens only if the Lobby reaches this; below it the launch is cancelled, everyone is refunded and the",
+              "name and ticker are released. This is what keeps a name from being held with an empty Lobby."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "max_total",
+            "type": "u64"
+          },
+          {
+            "name": "max_per_wallet",
+            "docs": [
+              "0 = no per-wallet cap."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "migration_fee",
+            "type": "u64"
+          },
+          {
+            "name": "settle_window",
+            "type": "i64"
+          },
+          {
+            "name": "name_bond",
+            "docs": [
+              "Refundable reservation bond (lamports) for the name and ticker, held during the Lobby only: back to the creator",
+              "when the curve opens, or when a cancelled launch's name is released."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NameRecord",
+      "docs": [
+        "Reservation of one canonical name or ticker. Held by `launch` from its creation, permanent once its curve opens;",
+        "anyone can close it when the launch is cancelled (rent and bond go back to the creator)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "launch",
+            "type": "pubkey"
+          },
+          {
+            "name": "permanent",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Phase",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Lobby"
+          },
+          {
+            "name": "Curve"
+          },
+          {
+            "name": "BreakingOut"
+          },
+          {
+            "name": "Migrated"
+          },
+          {
+            "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TradingInterface",
+      "docs": [
+        "A trading interface (terminal, bot, referral) that receives the interface share of the fee."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Vault",
+      "docs": [
+        "Program-owned account that only holds lamports."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Traded",
+      "type": {
+        "fields": [
+          {
+            "name": "launch",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "buy",
+            "type": "bool"
+          },
+          {
+            "name": "tokens",
+            "type": "u64"
+          },
+          {
+            "name": "native",
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "v",
+            "type": "u64"
+          },
+          {
+            "name": "t",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    }
+  ],
+  "events": [
+    {
+      "discriminator": [
+        145,
+        225,
+        227,
+        154,
+        219,
+        18,
+        7,
+        127
+      ],
+      "name": "BrokeOut"
+    },
+    {
+      "discriminator": [
+        111,
+        141,
+        26,
+        45,
+        161,
+        35,
+        100,
+        57
+      ],
+      "name": "Deposited"
+    },
+    {
+      "discriminator": [
+        59,
+        38,
+        190,
+        230,
+        33,
+        34,
+        89,
+        20
+      ],
+      "name": "LaunchCreated"
+    },
+    {
+      "discriminator": [
+        40,
+        189,
+        0,
+        197,
+        89,
+        167,
+        209,
+        69
+      ],
+      "name": "NameReleased"
+    },
+    {
+      "discriminator": [
+        232,
+        210,
+        40,
+        17,
+        142,
+        124,
+        145,
+        238
+      ],
+      "name": "Settled"
+    },
+    {
+      "discriminator": [
+        225,
+        202,
+        73,
+        175,
+        147,
+        43,
+        160,
+        150
+      ],
+      "name": "Traded"
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "MathOverflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6001,
+      "name": "OutOfRange",
+      "msg": "Amount out of range for the curve"
+    },
+    {
+      "code": 6002,
+      "name": "Insolvent",
+      "msg": "Curve would become insolvent"
+    },
+    {
+      "code": 6003,
+      "name": "Slippage",
+      "msg": "Slippage limit exceeded"
+    },
+    {
+      "code": 6004,
+      "name": "TradingClosed",
+      "msg": "Trading is closed for this phase"
+    },
+    {
+      "code": 6005,
+      "name": "NotBreakingOut",
+      "msg": "Token is not breaking out"
+    },
+    {
+      "code": 6006,
+      "name": "ZeroAmount",
+      "msg": "Amount must be positive"
+    },
+    {
+      "code": 6007,
+      "name": "InvalidParams",
+      "msg": "Invalid parameters"
+    },
+    {
+      "code": 6008,
+      "name": "GranularityViolated",
+      "msg": "Lobby allocation would leave a deposit without tokens"
+    },
+    {
+      "code": 6009,
+      "name": "LobbyClosed",
+      "msg": "Lobby is not open"
+    },
+    {
+      "code": 6010,
+      "name": "LobbyOpen",
+      "msg": "Lobby is still open"
+    },
+    {
+      "code": 6011,
+      "name": "BelowMinimum",
+      "msg": "Below the minimum deposit"
+    },
+    {
+      "code": 6012,
+      "name": "LobbyCap",
+      "msg": "Lobby cap reached"
+    },
+    {
+      "code": 6013,
+      "name": "WalletCap",
+      "msg": "Wallet cap reached"
+    },
+    {
+      "code": 6014,
+      "name": "SettleDeadlinePassed",
+      "msg": "Settlement window has passed"
+    },
+    {
+      "code": 6015,
+      "name": "NotSettled",
+      "msg": "Not settled"
+    },
+    {
+      "code": 6016,
+      "name": "CannotCancelYet",
+      "msg": "Settlement window has not passed yet"
+    },
+    {
+      "code": 6017,
+      "name": "AlreadyWithdrawn",
+      "msg": "Already withdrawn"
+    },
+    {
+      "code": 6018,
+      "name": "WrongAccount",
+      "msg": "Wrong account"
+    },
+    {
+      "code": 6019,
+      "name": "VaultUnderfunded",
+      "msg": "Vault would drop below rent exemption"
+    },
+    {
+      "code": 6020,
+      "name": "InvalidTicker",
+      "msg": "Ticker must be 1-10 characters of A-Z and 0-9"
+    },
+    {
+      "code": 6021,
+      "name": "InvalidName",
+      "msg": "Name must be 1-32 bytes without control characters"
+    },
+    {
+      "code": 6022,
+      "name": "NameHashMismatch",
+      "msg": "Name hash does not match the name"
+    },
+    {
+      "code": 6023,
+      "name": "InvalidUri",
+      "msg": "Metadata URI is longer than 200 bytes"
+    },
+    {
+      "code": 6024,
+      "name": "InvalidDexConfig",
+      "msg": "DAMM v2 config is not usable for a HerdCall pool"
+    },
+    {
+      "code": 6025,
+      "name": "NameNotReleasable",
+      "msg": "Name and ticker are held until the launch is cancelled or breaks out"
+    }
+  ]
+}

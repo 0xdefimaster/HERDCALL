@@ -26,6 +26,9 @@ pub const TOKEN_DECIMALS: u8 = 6;
 /// Metaplex limit for the metadata URI (JSON with the image and description).
 pub const MAX_URI_LEN: usize = 200;
 pub const MAX_LOBBY_SECS: i64 = 3_600;
+/// Lamports the breakout caller fronts to the migrator so the pool's rent is covered whatever it costs (about
+/// 0.021 SOL on a real cluster). Returned in the same instruction, with the migration fee left after rent.
+pub const BREAKOUT_FLOAT: u64 = 50_000_000;
 
 /// Parameters every new launch copies. Changing them never affects an existing launch.
 #[account]
