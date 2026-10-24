@@ -15,7 +15,7 @@ use anchor_spl::token::{CloseAccount, SyncNative};
 use anchor_spl::token_2022::Token2022;
 use herdcall_core::curve::Market;
 use herdcall_core::dex;
-use herdcall_core::fees::{split_fee, FeeParts};
+use herdcall_core::fees::{split_fee, split_lp_fees, FeeParts};
 use herdcall_core::names::{is_canonical_ticker, releasable};
 use herdcall_core::stampede::{claim_tokens, settle as settle_lobby};
 use herdcall_core::BPS;
@@ -456,6 +456,75 @@ pub mod herdcall {
         Ok(())
     }
 
+    /// Permissionless. Claims the locked position's fees (SOL only: the pool collects fees in token B) and splits them
+    /// as CURVE_SPEC §5.8 says. Creator, Rekt-back and protocol are paid now; the "back to liquidity" share stays in
+    /// the launch's SOL vault (`lp_reinvest_pending`) until it is added to the position. The caller pays the temporary
+    /// wrapped SOL account's rent and gets it back.
+    pub fn claim_lp_fees(ctx: Context<ClaimLpFees>) -> Result<()> {
+        require!(ctx.accounts.launch.phase == Phase::Migrated, HerdError::NotMigrated);
+        let a = &ctx.accounts;
+        let mint_key = a.launch.mint;
+        let bump = [a.launch.bump];
+        let launch_seeds: &[&[u8]] = &[LAUNCH_SEED, mint_key.as_ref(), &bump];
+        let launch_info = a.launch.to_account_info();
+        let token_before = a.token_vault.amount;
+        damm::claim_position_fee(
+            &damm::ClaimPositionFee {
+                pool_authority: &a.pool_authority.to_account_info(),
+                pool: &a.pool.to_account_info(),
+                position: &a.position.to_account_info(),
+                token_a_account: &a.token_vault.to_account_info(),
+                token_b_account: &a.fee_wsol.to_account_info(),
+                token_a_vault: &a.pool_token_vault.to_account_info(),
+                token_b_vault: &a.pool_wsol_vault.to_account_info(),
+                token_a_mint: &a.mint.to_account_info(),
+                token_b_mint: &a.native_mint.to_account_info(),
+                position_nft_account: &a.position_nft_account.to_account_info(),
+                owner: &launch_info,
+                token_program: &a.token_program.to_account_info(),
+                event_authority: &a.dex_event_authority.to_account_info(),
+                program: &a.dex_program.to_account_info(),
+            },
+            &[launch_seeds],
+        )?;
+        let mut fee_wsol = a.fee_wsol.clone();
+        fee_wsol.reload()?;
+        let mut token_vault = a.token_vault.clone();
+        token_vault.reload()?;
+        // Fees in token A would mix with unclaimed Lobby tokens; the config only allows fees in SOL.
+        require!(token_vault.amount == token_before, HerdError::InvalidDexConfig);
+        let fee = fee_wsol.amount;
+        require!(fee > 0, HerdError::NoFees);
+
+        // Unwrap into the SOL vault, give the caller the account's rent back, then split.
+        let sol_vault = a.sol_vault.to_account_info();
+        let rent_back = a.fee_wsol.to_account_info().lamports().checked_sub(fee).ok_or(HerdError::MathOverflow)?;
+        token::close_account(CpiContext::new_with_signer(
+            a.token_program.key(),
+            CloseAccount { account: a.fee_wsol.to_account_info(), destination: sol_vault.clone(), authority: launch_info.clone() },
+            &[launch_seeds],
+        ))?;
+        pay_from_vault(&sol_vault, &a.caller.to_account_info(), rent_back)?;
+        let parts = split_lp_fees(fee as u128, a.launch.kind(), a.launch.lock_ratio_bps as u128).map_err(core_err)?;
+        pay_from_vault(&sol_vault, &a.creator_fees.to_account_info(), to_u64(parts.creator)?)?;
+        pay_from_vault(&sol_vault, &a.rekt_back.to_account_info(), to_u64(parts.rekt_back)?)?;
+        pay_from_vault(&sol_vault, &a.protocol.to_account_info(), to_u64(parts.protocol)?)?;
+
+        let l = &mut ctx.accounts.launch;
+        l.lp_fees_claimed = l.lp_fees_claimed.checked_add(fee).ok_or(HerdError::MathOverflow)?;
+        l.lp_reinvest_pending = l.lp_reinvest_pending.checked_add(to_u64(parts.liquidity)?).ok_or(HerdError::MathOverflow)?;
+        emit!(LpFeesClaimed {
+            launch: l.key(),
+            fee,
+            liquidity: to_u64(parts.liquidity)?,
+            creator: to_u64(parts.creator)?,
+            rekt_back: to_u64(parts.rekt_back)?,
+            protocol: to_u64(parts.protocol)?,
+            forfeited: to_u64(parts.forfeited)?,
+        });
+        Ok(())
+    }
+
     /// Permissionless. Frees the name and ticker of a cancelled launch (Lobby below the minimum, or not settled before
     /// its deadline). Once the curve opens they are permanent. Both records close; their rent and the bond go back to
     /// the creator.
@@ -832,6 +901,54 @@ pub struct Breakout<'info> {
 }
 
 #[derive(Accounts)]
+pub struct ClaimLpFees<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(mut, seeds = [LAUNCH_SEED, launch.mint.as_ref()], bump = launch.bump)]
+    pub launch: Box<Account<'info, Launch>>,
+    #[account(address = launch.mint)]
+    pub mint: Box<Account<'info, Mint>>,
+    #[account(address = native_mint::ID)]
+    pub native_mint: Box<Account<'info, Mint>>,
+    #[account(mut, associated_token::mint = mint, associated_token::authority = launch)]
+    pub token_vault: Box<Account<'info, TokenAccount>>,
+    #[account(mut, seeds = [SOL_VAULT_SEED, launch.key().as_ref()], bump = launch.sol_vault_bump)]
+    pub sol_vault: Box<Account<'info, Vault>>,
+    #[account(mut, seeds = [CREATOR_FEES_SEED, launch.key().as_ref()], bump = launch.creator_fees_bump)]
+    pub creator_fees: Box<Account<'info, Vault>>,
+    #[account(mut, seeds = [REKT_BACK_SEED], bump = rekt_back.bump)]
+    pub rekt_back: Box<Account<'info, Vault>>,
+    #[account(mut, seeds = [PROTOCOL_SEED], bump = protocol.bump)]
+    pub protocol: Box<Account<'info, Vault>>,
+    #[account(init, payer = caller, seeds = [LP_FEE_WSOL_SEED, launch.key().as_ref()], bump, token::mint = native_mint, token::authority = launch)]
+    pub fee_wsol: Box<Account<'info, TokenAccount>>,
+    /// CHECK: the launch's pool, recorded at breakout; DAMM checks the rest.
+    #[account(address = launch.dex_pool @ HerdError::WrongAccount)]
+    pub pool: UncheckedAccount<'info>,
+    /// CHECK: the launch's position, recorded at breakout.
+    #[account(mut, address = launch.dex_position @ HerdError::WrongAccount)]
+    pub position: UncheckedAccount<'info>,
+    /// CHECK: checked by DAMM (holds the position NFT, owned by the launch PDA).
+    pub position_nft_account: UncheckedAccount<'info>,
+    /// CHECK: checked by DAMM (`has_one` on the pool).
+    #[account(mut)]
+    pub pool_token_vault: UncheckedAccount<'info>,
+    /// CHECK: checked by DAMM (`has_one` on the pool).
+    #[account(mut)]
+    pub pool_wsol_vault: UncheckedAccount<'info>,
+    /// CHECK: DAMM's pool authority.
+    #[account(address = damm::POOL_AUTHORITY)]
+    pub pool_authority: UncheckedAccount<'info>,
+    /// CHECK: checked by DAMM (event CPI).
+    pub dex_event_authority: UncheckedAccount<'info>,
+    /// CHECK: the real DAMM v2 program.
+    #[account(address = damm::PROGRAM_ID, executable)]
+    pub dex_program: UncheckedAccount<'info>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct ReleaseName<'info> {
     #[account(mut, seeds = [TICKER_SEED, launch.ticker.as_bytes()], bump = ticker_record.bump, has_one = launch @ HerdError::WrongAccount, close = creator)]
     pub ticker_record: Account<'info, NameRecord>,
@@ -882,6 +999,18 @@ pub struct LaunchCreated {
     pub close_at: i64,
     pub ticker: String,
     pub name: String,
+}
+
+#[event]
+pub struct LpFeesClaimed {
+    pub launch: Pubkey,
+    pub fee: u64,
+    pub liquidity: u64,
+    pub creator: u64,
+    pub rekt_back: u64,
+    pub protocol: u64,
+    /// Part of the creator share lost to a lower lock ratio (already counted in `rekt_back`).
+    pub forfeited: u64,
 }
 
 #[event]

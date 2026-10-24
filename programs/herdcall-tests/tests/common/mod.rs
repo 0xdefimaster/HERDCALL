@@ -549,4 +549,106 @@ impl Env {
         }
         Some(anchor_lang::AccountDeserialize::try_deserialize(&mut d.as_slice()).expect("metadata"))
     }
+
+    pub fn claim_lp_fees_accounts(&self, k: &LaunchKeys, caller: &Pubkey) -> herdcall::accounts::ClaimLpFees {
+        let d = dex_keys(k);
+        herdcall::accounts::ClaimLpFees {
+            caller: *caller,
+            launch: k.launch,
+            mint: k.mint,
+            native_mint: WSOL,
+            token_vault: k.token_vault,
+            sol_vault: k.sol_vault,
+            creator_fees: k.creator_fees,
+            rekt_back: pda(&[REKT_BACK_SEED]),
+            protocol: pda(&[PROTOCOL_SEED]),
+            fee_wsol: pda(&[LP_FEE_WSOL_SEED, k.launch.as_ref()]),
+            pool: d.pool,
+            position: d.position,
+            position_nft_account: d.position_nft_account,
+            pool_token_vault: d.token_vault,
+            pool_wsol_vault: d.wsol_vault,
+            pool_authority: herdcall::damm::POOL_AUTHORITY,
+            dex_event_authority: damm_pda(&[b"__event_authority"]),
+            dex_program: DAMM,
+            token_program: anchor_spl::token::ID,
+            system_program: anchor_lang::system_program::ID,
+        }
+    }
+
+    pub fn claim_lp_fees_with(&mut self, caller: &Keypair, accounts: herdcall::accounts::ClaimLpFees) -> Result<(), String> {
+        let ix = self.ix(accounts.to_account_metas(None), herdcall::instruction::ClaimLpFees {}.data());
+        self.send(ix, &[caller])
+    }
+
+    pub fn claim_lp_fees(&mut self, k: &LaunchKeys, caller: &Keypair) -> Result<(), String> {
+        let accounts = self.claim_lp_fees_accounts(k, &pk(&caller.pubkey()));
+        self.claim_lp_fees_with(caller, accounts)
+    }
+
+    /// DAMM v2 swap on a launch's pool; `sol_in` true buys tokens with wrapped SOL.
+    pub fn dex_swap(&mut self, k: &LaunchKeys, trader: &Keypair, amount_in: u64, sol_in: bool) -> Result<(), String> {
+        let d = dex_keys(k);
+        let t = pk(&trader.pubkey());
+        let (input, output) = if sol_in { (ata(&t, &WSOL), ata(&t, &k.mint)) } else { (ata(&t, &k.mint), ata(&t, &WSOL)) };
+        let m = |k: Pubkey, w: bool, sgn: bool| AccountMeta { pubkey: addr(&k), is_signer: sgn, is_writable: w };
+        let mut data = swap_discriminator().to_vec();
+        data.extend_from_slice(&amount_in.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        let ix = Instruction {
+            program_id: addr(&DAMM),
+            accounts: vec![
+                m(herdcall::damm::POOL_AUTHORITY, false, false),
+                m(d.pool, true, false),
+                m(input, true, false),
+                m(output, true, false),
+                m(d.token_vault, true, false),
+                m(d.wsol_vault, true, false),
+                m(k.mint, false, false),
+                m(WSOL, false, false),
+                m(t, false, true),
+                m(anchor_spl::token::ID, false, false),
+                m(anchor_spl::token::ID, false, false),
+                m(DAMM, false, false), // no referral account
+                m(damm_pda(&[b"__event_authority"]), false, false),
+                m(DAMM, false, false),
+            ],
+            data,
+        };
+        self.send(ix, &[trader])
+    }
+
+    /// A wallet with a funded wrapped SOL account and an (empty) account for `mint`.
+    pub fn dex_trader(&mut self, sol: u64, mint: &Pubkey) -> Keypair {
+        let w = self.user(sol + 3);
+        let wp = pk(&w.pubkey());
+        let create = |owner: &Pubkey, mint: &Pubkey| Instruction {
+            program_id: addr(&anchor_spl::associated_token::ID),
+            accounts: [(wp, true, true), (ata(owner, mint), true, false), (*owner, false, false), (*mint, false, false),
+                (anchor_lang::system_program::ID, false, false), (anchor_spl::token::ID, false, false)]
+            .iter()
+            .map(|(k, w, s)| AccountMeta { pubkey: addr(k), is_signer: *s, is_writable: *w })
+            .collect(),
+            data: vec![1],
+        };
+        self.send(create(&wp, &WSOL), &[&w]).unwrap();
+        self.send(create(&wp, mint), &[&w]).unwrap();
+        let wsol = ata(&wp, &WSOL);
+        let mut data = vec![2u8, 0, 0, 0];
+        data.extend_from_slice(&(sol * SOL).to_le_bytes());
+        let fund = Instruction {
+            program_id: addr(&anchor_lang::system_program::ID),
+            accounts: vec![AccountMeta { pubkey: addr(&wp), is_signer: true, is_writable: true }, AccountMeta { pubkey: addr(&wsol), is_signer: false, is_writable: true }],
+            data,
+        };
+        self.send(fund, &[&w]).unwrap();
+        let sync = Instruction { program_id: addr(&anchor_spl::token::ID), accounts: vec![AccountMeta { pubkey: addr(&wsol), is_signer: false, is_writable: true }], data: vec![17] };
+        self.send(sync, &[&w]).unwrap();
+        w
+    }
+}
+
+/// sha256("global:swap")[..8]
+pub fn swap_discriminator() -> [u8; 8] {
+    [248, 198, 158, 145, 225, 117, 135, 200]
 }

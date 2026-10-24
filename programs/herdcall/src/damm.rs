@@ -15,6 +15,7 @@ pub const POOL_AUTHORITY: Pubkey = Pubkey::from_str_const("HLnpSz9h2S4hiLQ43rnSD
 
 const IX_INITIALIZE_POOL: [u8; 8] = [95, 180, 10, 172, 84, 174, 232, 40];
 const IX_PERMANENT_LOCK_POSITION: [u8; 8] = [165, 176, 125, 6, 231, 171, 186, 213];
+const IX_CLAIM_POSITION_FEE: [u8; 8] = [180, 38, 154, 17, 133, 33, 162, 211];
 const CONFIG_DISCRIMINATOR: [u8; 8] = [155, 12, 170, 224, 30, 250, 204, 130];
 const CONFIG_LEN: usize = 8 + 320;
 
@@ -145,5 +146,53 @@ pub fn permanent_lock_position<'info>(
     data.extend_from_slice(&liquidity.to_le_bytes());
     let ix = Instruction { program_id: PROGRAM_ID, accounts, data };
     let infos = [pool, position, position_nft_account, owner, event_authority, program].map(|i| i.clone());
+    invoke_signed(&ix, &infos, signers).map_err(Into::into)
+}
+
+/// Accounts of `claim_position_fee`, in DAMM's order.
+pub struct ClaimPositionFee<'a, 'info> {
+    pub pool_authority: &'a AccountInfo<'info>,
+    pub pool: &'a AccountInfo<'info>,
+    pub position: &'a AccountInfo<'info>,
+    pub token_a_account: &'a AccountInfo<'info>,
+    pub token_b_account: &'a AccountInfo<'info>,
+    pub token_a_vault: &'a AccountInfo<'info>,
+    pub token_b_vault: &'a AccountInfo<'info>,
+    pub token_a_mint: &'a AccountInfo<'info>,
+    pub token_b_mint: &'a AccountInfo<'info>,
+    pub position_nft_account: &'a AccountInfo<'info>,
+    pub owner: &'a AccountInfo<'info>,
+    pub token_program: &'a AccountInfo<'info>,
+    pub event_authority: &'a AccountInfo<'info>,
+    pub program: &'a AccountInfo<'info>,
+}
+
+/// Sends the position's pending fees to `token_a_account` / `token_b_account`.
+pub fn claim_position_fee(a: &ClaimPositionFee, signers: &[&[&[u8]]]) -> Result<()> {
+    let w = |k: &AccountInfo| AccountMeta::new(k.key(), false);
+    let r = |k: &AccountInfo| AccountMeta::new_readonly(k.key(), false);
+    let accounts = vec![
+        r(a.pool_authority),
+        r(a.pool),
+        w(a.position),
+        w(a.token_a_account),
+        w(a.token_b_account),
+        w(a.token_a_vault),
+        w(a.token_b_vault),
+        r(a.token_a_mint),
+        r(a.token_b_mint),
+        r(a.position_nft_account),
+        AccountMeta::new_readonly(a.owner.key(), true),
+        r(a.token_program),
+        r(a.token_program),
+        r(a.event_authority),
+        r(a.program),
+    ];
+    let ix = Instruction { program_id: PROGRAM_ID, accounts, data: IX_CLAIM_POSITION_FEE.to_vec() };
+    let infos = [
+        a.pool_authority, a.pool, a.position, a.token_a_account, a.token_b_account, a.token_a_vault, a.token_b_vault,
+        a.token_a_mint, a.token_b_mint, a.position_nft_account, a.owner, a.token_program, a.event_authority, a.program,
+    ]
+    .map(|i| i.clone());
     invoke_signed(&ix, &infos, signers).map_err(Into::into)
 }

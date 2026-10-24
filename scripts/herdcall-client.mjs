@@ -119,3 +119,71 @@ export function breakoutAccounts(keeper, k, dexConfig) {
     systemProgram: SYSTEM,
   };
 }
+
+/** Accounts of `claim_lp_fees` for anchor's accountsStrict. */
+export function claimLpFeesAccounts(caller, k, dexConfig) {
+  const g = globalKeys();
+  const d = dexKeys(dexConfig, k);
+  return {
+    caller,
+    launch: k.launch,
+    mint: k.mint,
+    nativeMint: WSOL,
+    tokenVault: k.tokenVault,
+    solVault: k.solVault,
+    creatorFees: k.creatorFees,
+    rektBack: g.rektBack,
+    protocol: g.protocol,
+    feeWsol: pda([enc('lp_fee_wsol'), k.launch.toBuffer()]),
+    pool: d.pool,
+    position: d.position,
+    positionNftAccount: d.positionNftAccount,
+    poolTokenVault: d.poolTokenVault,
+    poolWsolVault: d.poolWsolVault,
+    poolAuthority: DAMM_POOL_AUTHORITY,
+    dexEventAuthority: d.eventAuthority,
+    dexProgram: DAMM,
+    tokenProgram: TOKEN_PROGRAM,
+    systemProgram: SYSTEM,
+  };
+}
+
+const SWAP = Uint8Array.from([248, 198, 158, 145, 225, 117, 135, 200]); // sha256("global:swap")[..8]
+
+/** DAMM v2 swap on a launch's pool. `solIn` buys tokens with the trader's wrapped SOL. */
+export function dexSwapIx(trader, k, dexConfig, amountIn, solIn) {
+  const d = dexKeys(dexConfig, k);
+  const [input, output] = solIn ? [ata(trader, WSOL), ata(trader, k.mint)] : [ata(trader, k.mint), ata(trader, WSOL)];
+  const data = Buffer.alloc(24);
+  data.set(SWAP, 0);
+  data.writeBigUInt64LE(BigInt(amountIn), 8);
+  const m = (pubkey, isWritable = false, isSigner = false) => ({ pubkey, isWritable, isSigner });
+  return new web3.TransactionInstruction({
+    programId: DAMM,
+    keys: [
+      m(DAMM_POOL_AUTHORITY), m(d.pool, true), m(input, true), m(output, true), m(d.poolTokenVault, true),
+      m(d.poolWsolVault, true), m(k.mint), m(WSOL), m(trader, false, true), m(TOKEN_PROGRAM), m(TOKEN_PROGRAM),
+      m(DAMM), m(d.eventAuthority), m(DAMM),
+    ],
+    data,
+  });
+}
+
+/** Idempotent associated token account creation. */
+export function createAtaIx(payer, owner, mint) {
+  const m = (pubkey, isWritable = false, isSigner = false) => ({ pubkey, isWritable, isSigner });
+  return new web3.TransactionInstruction({
+    programId: ATA_PROGRAM,
+    keys: [m(payer, true, true), m(ata(owner, mint), true), m(owner), m(mint), m(SYSTEM), m(TOKEN_PROGRAM)],
+    data: Buffer.from([1]),
+  });
+}
+
+/** Wraps `lamports` into the owner's wrapped SOL account (which must exist). */
+export function wrapSolIxs(owner, lamports) {
+  const w = ata(owner, WSOL);
+  return [
+    web3.SystemProgram.transfer({ fromPubkey: owner, toPubkey: w, lamports }),
+    new web3.TransactionInstruction({ programId: TOKEN_PROGRAM, keys: [{ pubkey: w, isWritable: true, isSigner: false }], data: Buffer.from([17]) }),
+  ];
+}

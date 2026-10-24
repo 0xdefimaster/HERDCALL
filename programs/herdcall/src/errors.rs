@@ -52,6 +52,10 @@ pub enum HerdError {
     InvalidUri,
     #[msg("DAMM v2 config is not usable for a HerdCall pool")]
     InvalidDexConfig,
+    #[msg("Token has not broken out")]
+    NotMigrated,
+    #[msg("No fees to claim")]
+    NoFees,
     #[msg("Name and ticker are held until the launch is cancelled or breaks out")]
     NameNotReleasable,
 }

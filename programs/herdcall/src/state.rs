@@ -21,6 +21,8 @@ pub const MIGRATOR_SEED: &[u8] = b"migrator";
 pub const MIGRATOR_TOKEN_SEED: &[u8] = b"migrator_token";
 pub const MIGRATOR_WSOL_SEED: &[u8] = b"migrator_wsol";
 pub const POSITION_NFT_SEED: &[u8] = b"position_nft";
+/// Temporary wrapped SOL account the locked position's fees are claimed into.
+pub const LP_FEE_WSOL_SEED: &[u8] = b"lp_fee_wsol";
 
 pub const TOKEN_DECIMALS: u8 = 6;
 /// Metaplex limit for the metadata URI (JSON with the image and description).
@@ -139,6 +141,10 @@ pub struct Launch {
     pub burned: u64,
     pub dex_pool: Pubkey,
     pub dex_position: Pubkey,
+    /// SOL fees claimed from the locked position so far (CURVE_SPEC §5.7).
+    pub lp_fees_claimed: u64,
+    /// The "back to liquidity" share of those fees, held in the SOL vault until it is added to the position.
+    pub lp_reinvest_pending: u64,
     pub bump: u8,
     pub sol_vault_bump: u8,
     pub creator_fees_bump: u8,

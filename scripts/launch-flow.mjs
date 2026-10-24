@@ -10,7 +10,8 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import {
   PROGRAM_ID, DAMM, METADATA_PROGRAM, TOKEN_PROGRAM, ATA_PROGRAM, SYSTEM, RENT,
-  ata, breakoutAccounts, canonicalTicker, depositKey, dexKeys, globalKeys, launchKeys, nameHash,
+  WSOL, ata, breakoutAccounts, canonicalTicker, claimLpFeesAccounts, createAtaIx, depositKey, dexKeys, dexSwapIx,
+  globalKeys, launchKeys, nameHash, wrapSolIxs,
 } from './herdcall-client.mjs';
 
 const { web3, BN } = anchor;
@@ -180,6 +181,25 @@ async function main() {
   check(locked === BigInt(l.lpLiquidity.toString()) && locked > 0n, 'whole position permanently locked');
   const nft = (await connection.getAccountInfo(d.positionNftAccount)).data;
   check(new web3.PublicKey(nft.subarray(32, 64)).equals(k.launch), 'position NFT held by the launch PDA');
+
+  step('trade on the pool, then claim the locked position\'s fees');
+  const swapIn = Math.round(Number(l.lpNative.toString()) / 20);
+  const swapTx = new web3.Transaction().add(
+    createAtaIx(payer.publicKey, payer.publicKey, WSOL),
+    ...wrapSolIxs(payer.publicKey, swapIn),
+    dexSwapIx(payer.publicKey, k, dexConfig, swapIn, true),
+  );
+  await web3.sendAndConfirmTransaction(connection, swapTx, [payer]);
+  ok(`bought tokens with ${swapIn / SOL} SOL on the pool`);
+  const vaults = [k.creatorFees, g.rektBack, g.protocol];
+  const before = await Promise.all(vaults.map(lamports));
+  await program.methods.claimLpFees().accountsStrict(claimLpFeesAccounts(payer.publicKey, k, dexConfig)).rpc();
+  l = await program.account.launch.fetch(k.launch);
+  const after = await Promise.all(vaults.map(lamports));
+  const paid = after.reduce((s, v, i) => s + (v - before[i]), 0);
+  check(l.lpFeesClaimed.toNumber() > 0, `claimed ${l.lpFeesClaimed.toNumber() / SOL} SOL of pool fees`);
+  check(paid + l.lpReinvestPending.toNumber() === l.lpFeesClaimed.toNumber(),
+    `creator, Rekt-back and protocol paid; ${l.lpReinvestPending.toNumber() / SOL} SOL held for liquidity`);
   console.log('\nAll steps passed.');
 }
 

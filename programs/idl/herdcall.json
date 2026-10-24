@@ -758,6 +758,100 @@
       "args": []
     },
     {
+      "name": "claim_lp_fees",
+      "docs": [
+        "Permissionless. Claims the locked position's fees (SOL only: the pool collects fees in token B) and splits them",
+        "as CURVE_SPEC §5.8 says. Creator, Rekt-back and protocol are paid now; the \"back to liquidity\" share stays in",
+        "the launch's SOL vault (`lp_reinvest_pending`) until it is added to the position. The caller pays the temporary",
+        "wrapped SOL account's rent and gets it back."
+      ],
+      "discriminator": [
+        72,
+        86,
+        212,
+        142,
+        60,
+        38,
+        74,
+        75
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "launch",
+          "writable": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "native_mint"
+        },
+        {
+          "name": "token_vault",
+          "writable": true
+        },
+        {
+          "name": "sol_vault",
+          "writable": true
+        },
+        {
+          "name": "creator_fees",
+          "writable": true
+        },
+        {
+          "name": "rekt_back",
+          "writable": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "fee_wsol",
+          "writable": true
+        },
+        {
+          "name": "pool"
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "position_nft_account"
+        },
+        {
+          "name": "pool_token_vault",
+          "writable": true
+        },
+        {
+          "name": "pool_wsol_vault",
+          "writable": true
+        },
+        {
+          "name": "pool_authority"
+        },
+        {
+          "name": "dex_event_authority"
+        },
+        {
+          "name": "dex_program"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "release_name",
       "docs": [
         "Permissionless. Frees the name and ticker of a cancelled launch (Lobby below the minimum, or not settled before",
@@ -1059,6 +1153,45 @@
       }
     },
     {
+      "name": "LpFeesClaimed",
+      "type": {
+        "fields": [
+          {
+            "name": "launch",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "liquidity",
+            "type": "u64"
+          },
+          {
+            "name": "creator",
+            "type": "u64"
+          },
+          {
+            "name": "rekt_back",
+            "type": "u64"
+          },
+          {
+            "name": "protocol",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "Part of the creator share lost to a lower lock ratio (already counted in `rekt_back`)."
+            ],
+            "name": "forfeited",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
       "name": "NameReleased",
       "type": {
         "fields": [
@@ -1307,6 +1440,20 @@
           {
             "name": "dex_position",
             "type": "pubkey"
+          },
+          {
+            "name": "lp_fees_claimed",
+            "docs": [
+              "SOL fees claimed from the locked position so far (CURVE_SPEC §5.7)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "lp_reinvest_pending",
+            "docs": [
+              "The \"back to liquidity\" share of those fees, held in the SOL vault until it is added to the position."
+            ],
+            "type": "u64"
           },
           {
             "name": "bump",
@@ -1562,6 +1709,19 @@
     },
     {
       "discriminator": [
+        106,
+        76,
+        240,
+        18,
+        233,
+        91,
+        163,
+        215
+      ],
+      "name": "LpFeesClaimed"
+    },
+    {
+      "discriminator": [
         40,
         189,
         0,
@@ -1728,6 +1888,16 @@
     },
     {
       "code": 6025,
+      "name": "NotMigrated",
+      "msg": "Token has not broken out"
+    },
+    {
+      "code": 6026,
+      "name": "NoFees",
+      "msg": "No fees to claim"
+    },
+    {
+      "code": 6027,
       "name": "NameNotReleasable",
       "msg": "Name and ticker are held until the launch is cancelled or breaks out"
     }
