@@ -397,9 +397,11 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
 
 **Kod yapısı ve araç zinciri**
 - `programs/herdcall-core`: saf Rust, tam sayı ve taşma kontrollü aritmetik. Programdaki tüm hesaplar buradan gelir.
-- `programs/herdcall` (sıradaki): Anchor programı; hesap yapıları, talimatlar, Meteora DAMM v2 çağrıları.
-- Programı derlemek ve yerel olarak test etmek için Solana CLI, `cargo build-sbf` ve Anchor gerekir. Bulut ortamında
-  bunların indirilmesi için ağ ayarlarında `release.anza.xyz` ve `github.com` alan adlarına izin verilmeli.
+- `programs/herdcall`: Anchor 1.2 programı; hesap yapıları, talimatlar (Meteora DAMM v2 çağrıları sıradaki iş).
+- `programs/herdcall-tests`: derlenmiş programı LiteSVM'de çalıştıran uçtan uca testler (`npm run test:program`).
+- Programı derlemek ve yerel olarak test etmek için Solana CLI, `cargo build-sbf` ve Anchor gerekir; LiteSVM 0.18
+  Rust 1.97.1 veya üstünü ister. Bulut ortamında bunların indirilmesi için ağ ayarlarında `release.anza.xyz` ve
+  `github.com` alan adlarına izin verilmeli.
 
 **Program yükseltme politikası (karar: yükseltilebilir)**
 
@@ -433,8 +435,13 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
    - ✅ **Çekirdek matematik Rust'ta** ([`programs/herdcall-core`](../programs/herdcall-core)): Stampede settlement, curve,
      ücretler, "tut, kazan", breakout. Solana bağımlılığı yok; program ve araçlar aynı kodu kullanacak. JS referans
      modelinden üretilen test vektörleriyle birebir aynı sonucu verir (`npm run vectors`, `npm run test:core`).
-   - ⏳ Anchor programı (hesaplar, talimatlar, Meteora DAMM v2 entegrasyonu) ve test ağında aynı invariant testleri.
-     Solana araç zinciri gerekiyor (§12).
+   - ✅ **Anchor programı, ilk sürüm** ([`programs/herdcall`](../programs/herdcall)): Lobby, Stampede, claim/iade,
+     curve işlemleri, ücret dağıtımı, breakout (keeper ücreti, fazla LP token yakımı). Uçtan uca testler
+     ([`programs/herdcall-tests`](../programs/herdcall-tests), LiteSVM, `npm run test:program`) derlenmiş programı
+     çalıştırır ve her sonucu çekirdekle karşılaştırır: tam yaşam döngüsü, zaman ve aşama kuralları, boş Lobby, kayma
+     limiti, sahte hesaplar, cüzdan ve Lobby sınırları, kira tabanı. Programa bilerek eklenen 9 hatanın 9'unu yakalar.
+   - ⏳ Meteora DAMM v2 havuzunun açılması ve LP'nin kalıcı kilidi (breakout şimdilik fonları ayırıp `Migrating`
+     aşamasında bekler), isim rezervasyonu, devnet kurulumu ve devnet'te aynı testler.
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
    açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda. İsteğe bağlı **Creator Bounty** (§4).
 3. **Şeffaflık ve keşif deneyimi:** Gerçek token verileri, işlem geçmişi, creator geçmişi, token yetkileri ve

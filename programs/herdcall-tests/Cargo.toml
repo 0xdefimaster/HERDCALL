@@ -1,0 +1,19 @@
+[package]
+name = "herdcall-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "End-to-end tests of the compiled HerdCall program in LiteSVM (build it first: cargo build-sbf)"
+
+[dev-dependencies]
+litesvm = "0.18.1"
+herdcall = { path = "../herdcall", features = ["no-entrypoint"] }
+herdcall-core = { path = "../herdcall-core" }
+anchor-lang = "1.2.1"
+anchor-spl = "1.2.1"
+solana-address = "~2.7"
+solana-instruction = "~3.5"
+solana-keypair = "3.1.2"
+solana-signer = "3.0.1"
+solana-transaction = "4"
+solana-clock = "~3.2"

@@ -18,7 +18,8 @@
     "test:mirror": "node --test src/lib/mirror.test.js",
     "sim:curve": "node sim/curve-run.js",
     "vectors": "node sim/vectors.js",
-    "test:core": "cd programs/herdcall-core && cargo test"
+    "test:core": "cd programs/herdcall-core && cargo test",
+    "test:program": "cd programs && cargo build-sbf --manifest-path herdcall/Cargo.toml && cargo test -p herdcall-tests"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0",

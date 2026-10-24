@@ -1,5 +1,5 @@
 [workspace]
-members = ["herdcall-core", "herdcall"]
+members = ["herdcall-core", "herdcall", "herdcall-tests"]
 resolver = "2"
 
 [profile.release]

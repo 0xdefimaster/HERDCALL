@@ -230,7 +230,7 @@ pub mod herdcall {
         )?;
         let sol_vault = ctx.accounts.sol_vault.to_account_info();
         pay_from_vault(&sol_vault, &ctx.accounts.trader.to_account_info(), to_u64(q.received)?)?;
-        pay_parts_from_vault(&sol_vault, &parts, &fee_accounts(&ctx.accounts))?;
+        pay_parts_from_vault(&sol_vault, &parts, &fee_accounts(ctx.accounts))?;
         let l = &mut ctx.accounts.launch;
         l.store_curve(&m.curve)?;
         l.store_phase(m.phase);
@@ -321,7 +321,7 @@ fn settle_buy(ctx: Context<Trade>, m: &Market, kind: herdcall_core::fees::Kind, 
     let a = &ctx.accounts;
     let trader = a.trader.to_account_info();
     pay_from_wallet(&trader, &a.sol_vault.to_account_info(), &a.system_program, cost)?;
-    for (to, amount) in fee_targets(a, &parts) {
+    for (to, amount) in targets(&fee_accounts(a), &parts)? {
         pay_from_wallet(&trader, &to, &a.system_program, amount)?;
     }
     let mint_key = a.launch.mint;
@@ -372,10 +372,6 @@ fn targets<'info>(f: &FeeAccounts<'info>, p: &FeeParts) -> Result<Vec<(AccountIn
         out.push((i, to_u64(p.interface)?));
     }
     Ok(out)
-}
-
-fn fee_targets<'info>(a: &Trade<'info>, p: &FeeParts) -> Vec<(AccountInfo<'info>, u64)> {
-    targets(&fee_accounts(a), p).unwrap_or_default()
 }
 
 fn pay_parts_from_vault<'info>(vault: &AccountInfo<'info>, p: &FeeParts, f: &FeeAccounts<'info>) -> Result<()> {
