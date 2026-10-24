@@ -113,8 +113,6 @@ pub const REINVEST_MAX_PRICE_MOVE_BPS: u128 = 60;
 pub const REINVEST_MAX_TOKEN_BPS: u128 = 50;
 /// The keeper's price band may span at most this (max price over min price).
 pub const REINVEST_MAX_BAND_BPS: u128 = 200;
-/// Without a reinvest by the keeper for this long, anyone may call (so the share never stays stuck).
-pub const KEEPER_GRACE_SECS: i64 = 7 * 24 * 3600;
 /// DAMM fee numerators are over 1e9.
 pub const FEE_DENOMINATOR: u128 = 1_000_000_000;
 

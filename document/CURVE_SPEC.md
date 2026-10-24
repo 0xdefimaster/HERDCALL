@@ -222,9 +222,10 @@ geri" kuralı değişmedi.
 
 | Kural | Değer |
 |---|---|
-| Kim çağırır | Yalnızca `Config.reinvest_keeper` (yönetici `set_reinvest_keeper` ile atar; başlangıçta yönetici) |
+| Kim çağırır | Yalnızca `Config.reinvest_keeper`, kendi imzasıyla (yönetici `set_reinvest_keeper` ile atar; başlangıçta yönetici). Başka hiçbir yol yok; ne kadar beklenirse beklensin |
 | Fiyat bandı | Keeper kendi zincir dışı gözlemlerinden bir bant verir; havuz fiyatı bandın dışındaysa çağrı reddedilir. Bant en fazla %2 genişliğinde olabilir |
-| Canlılık yedeği | Bir launch'ta 7 gün (`KEEPER_GRACE_SECS`) keeper yeniden yatırma yapmazsa herkes çağırabilir (kendi bandıyla); ilk başarılı çağrıdan sonra yine yalnızca keeper |
+| Keeper durursa | Bekleyen pay SOL olarak launch'ın kasasında bekler (kaybolmaz, yalnızca LP'ye eklenmesi gecikir). Canlılığı yönetici yeni bir keeper atayarak sağlar |
+| Ücret toplama | `claim_lp_fees` herkese açık kalır; creator, Rekt-back ve protokol payları keeper'dan bağımsız ödenir |
 | En küçük parti | Bekleyen pay 0,01 SOL'e ulaşmadan işlem yapılmaz; küçük tutarlar sayaçta birikir |
 | Çağrı başına tavan | Havuz likiditesindeki SOL'ün $\min(\%0{,}5,\ \text{havuz ücreti}/2)$'si. %1'lik havuzda %0,5; %0,25'lik havuzda %0,12 (sabit %0,5 orada kârlılık eşiğine eşit olurdu) |
 | Takas çıktısı | En az: spot miktar × (1 − havuz ücreti) × (1 − %0,5). %1'lik havuzda spotun ~%98,5'i |
@@ -243,13 +244,13 @@ Bir çağrının adımları:
 |---|---|
 | Fiyat çağrıdan önce 20 SOL'lük alımla %35,7 itildi, keeper eski gözlemiyle çağırdı | Reddedildi (`PriceOutOfBand`), hiçbir şey harcanmadı. Fiyat geri gelince aynı bant geçti |
 | Bant içinde kalan küçük itme (+%0,33) | Çağrı geçti; adil fiyata göre kayıp %0,79 (havuz ücreti ve fiyat etkisi dahil) |
-| Yedek modda saldırgan 5 SOL ile itip kendisi çağırdı (+%8,4) | Protokol 0,623 SOL'ün 0,028'ini kaybetti (%4,6); saldırgan −0,075 SOL |
-| Aynısı, 20 SOL (+%35,7) | Protokol 0,697'nin 0,102'sini (%14,7); saldırgan −0,301 SOL |
-| Aynısı, 60 SOL (+%123) | Protokol 0,894'ün 0,300'ünü (%33,5); saldırgan −0,903 SOL |
+| Kendi seçtiği bantla, itilmiş fiyattan çağrı (20 SOL, +%35,7) | Keeper olmayan çağıran reddedilir (`KeeperOnly`). Keeper anahtarı ele geçirilmişse: protokol 0,697 SOL'ün 0,102'sini kaybeder (%14,7), saldırgan −0,301 SOL |
 
-Yedek modda saldırgan kâr etmiyor, ama protokole maliyet bindirebiliyor ("zarar ettirme"). Kayıp, bir çağrının tavanıyla
-sınırlı. Bu yüzden yedek mod yalnızca keeper uzun süre çalışmazsa paranın sonsuza kadar takılı kalmaması içindir. Normal
-çalışmada keeper bandı bu saldırıyı reddeder.
+**Herkese açık yedek mod neden yok.** Önceki sürümde 7 gün keeper çalışmazsa herkes kendi bandıyla çağırabiliyordu.
+Testte saldırgan 5, 20 ve 60 SOL ile fiyatı itip kendisi çağırdığında zarar etti (−0,08 / −0,30 / −0,90 SOL). Ama
+protokol de bir çağrının %4,6 / %14,7 / %33,5'ini kaybetti. Saldırganın kâr etmemesi, protokolün kasıtlı zarara
+uğratılamayacağı anlamına gelmez; bu yol bilerek açılmış bir saldırı yolu olurdu ve kaldırıldı. Aynı kayıp bugün yalnızca
+keeper anahtarı ele geçirilirse mümkündür. O durumda da bir çağrının tavanıyla sınırlıdır ve yönetici anahtarı değiştirir.
 
 **Keeper: kim, hangi teşvikle, ne sıklıkla.**
 - **Kim:** Protokolün çalıştırdığı bir hizmet. Anahtarı yalnızca bu işe ayrılmıştır ve yönetici değiştirebilir.
@@ -262,12 +263,13 @@ sınırlı. Bu yüzden yedek mod yalnızca keeper uzun süre çalışmazsa paran
 - **Bant:** Keeper bandı, havuz fiyatının son 30 dakikadaki slot örneklerinin medyanından ±%0,5 olarak hesaplar. Anlık
   fiyat medyandan %0,5'ten fazla saparsa beklemesi önerilir; bu zincir dışı bir kuraldır.
 - **Gönderim:** İşlemler mümkünse özel paketle (Jito) gönderilir.
-- **Anahtar ele geçirilirse:** Keeper yalnızca yeniden yatırma yapabilir; para çekemez. En kötü durum, yedek moddaki
+- **Anahtar ele geçirilirse:** Keeper yalnızca yeniden yatırma yapabilir; para çekemez. En kötü durum, yukarıdaki
   gibi tavanla sınırlı kayıptır. Yönetici anahtarı değiştirir.
-- **Keeper durursa:** Bekleyen pay birikir. 7 gün sonra herkes çağırabilir; tablodaki kayıp riski o zaman geçerlidir.
+- **Keeper durursa:** Bekleyen pay SOL olarak birikir; hiçbir şey kaybolmaz. Yönetici yeni keeper atar. İzlenecek
+  işaret: bekleyen payı en küçük partiyi aşan ve bir günden uzun beklemiş launch'lar.
 
-**Testler:** Bilerek eklenen 6 hatanın 6'sı yakalanır: keeper kontrolü, bant kontrolü, bant genişliği, tavan, bekleme
-süresi ve zamanlayıcı. Fiyat hareketi ve token sınırları çağrı tavanının zaten sağladığı şeylerin yedeğidir; testlerde
+**Testler:** Bilerek eklenen hataların hepsi yakalanır: keeper kontrolü, keeper değişimi, bant kontrolü, bant genişliği
+ve tavan. Fiyat hareketi ve token sınırları çağrı tavanının zaten sağladığı şeylerin yedeğidir; testlerde
 tetiklenemezler. Takas çıktısı sınırı artık havuzun kendi ücretinden hesaplanıyor; çekirdek birim testleriyle doğrulanır,
 programda tetiklenmesi DAMM durumunu bozmadan mümkün değil.
 

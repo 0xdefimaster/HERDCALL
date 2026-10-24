@@ -5,6 +5,7 @@ mod common;
 use common::*;
 use herdcall::state::*;
 use herdcall_core::dex;
+use solana_keypair::Keypair;
 use solana_signer::Signer;
 
 fn expect_err<T>(r: Result<T, String>, code: &str) {
@@ -145,68 +146,74 @@ fn a_price_moved_before_the_call_is_rejected_by_the_keeper_band() {
     assert!(loss / used < 0.02, "in-band loss stays small");
 }
 
-/// Without the keeper for `KEEPER_GRACE_SECS`, anyone may reinvest; then the keeper-only rule is back.
+/// Only the current keeper reinvests; nobody else ever can, however long it waits. While no keeper acts the share
+/// waits as SOL in the vault, and the admin restores reinvesting by appointing a new keeper.
 #[test]
-fn anyone_may_reinvest_after_the_keeper_has_been_idle() {
+fn only_the_current_keeper_reinvests_and_the_admin_replaces_it() {
     let mut env = env();
     let k = migrated(&mut env);
     pending(&mut env, &k, 1);
     let stranger = env.user(1);
     let p = env.pool_sqrt_price(&k);
     expect_err(env.reinvest_lp_at(&k, &stranger, p), "KeeperOnly");
-    env.set_time(env.launch(&k).last_reinvest_at + dex::KEEPER_GRACE_SECS - 1);
+    env.set_time(env.now + 365 * 24 * 3600);
     expect_err(env.reinvest_lp_at(&k, &stranger, p), "KeeperOnly");
-    env.set_time(env.launch(&k).last_reinvest_at + dex::KEEPER_GRACE_SECS);
-    env.reinvest_lp_at(&k, &stranger, p).unwrap();
-    assert_eq!(env.launch(&k).last_reinvest_at, env.now);
-    let p = env.pool_sqrt_price(&k);
-    expect_err(env.reinvest_lp_at(&k, &stranger, p), "KeeperOnly");
-    // The admin can hand the job to a dedicated keeper.
-    let keeper = env.user(1);
+    // A year without a keeper: the share is still there, as SOL.
+    assert_eq!(env.launch(&k).lp_reinvest_pending, SOL);
+    assert!(env.lamports(&k.sol_vault) >= env.rent(&k.sol_vault) + SOL);
+
+    let set = |env: &mut Env, signer: &Keypair, keeper: &Keypair| {
+        let metas = anchor_lang::ToAccountMetas::to_account_metas(
+            &herdcall::accounts::AdminOnly { admin: pk(&signer.pubkey()), config: pda(&[CONFIG_SEED]) },
+            None,
+        );
+        let data = anchor_lang::InstructionData::data(&herdcall::instruction::SetReinvestKeeper { keeper: pk(&keeper.pubkey()) });
+        let ix = env.ix(metas, data);
+        env.send(ix, &[signer])
+    };
+    let new_keeper = env.user(1);
+    expect_err(set(&mut env, &stranger, &stranger), "ConstraintHasOne");
     let admin = env.admin.insecure_clone();
-    let metas = anchor_lang::ToAccountMetas::to_account_metas(
-        &herdcall::accounts::AdminOnly { admin: pk(&admin.pubkey()), config: pda(&[CONFIG_SEED]) },
-        None,
-    );
-    let ix = env.ix(metas, anchor_lang::InstructionData::data(&herdcall::instruction::SetReinvestKeeper { keeper: pk(&keeper.pubkey()) }));
-    env.send(ix, &[&admin]).unwrap();
-    env.reinvest_lp_at(&k, &keeper, p).unwrap();
+    set(&mut env, &admin, &new_keeper).unwrap();
+    // The old keeper (the admin) is out; the new one reinvests.
+    expect_err(env.reinvest_lp_at(&k, &admin, p), "KeeperOnly");
+    env.reinvest_lp_at(&k, &new_keeper, p).unwrap();
+    assert!(env.launch(&k).lp_reinvest_pending < SOL);
+    expect_err(env.reinvest_lp_at(&k, &stranger, env.pool_sqrt_price(&k)), "KeeperOnly");
 }
 
-/// In the idle fallback the caller picks the band, so it can be a manipulator: it pushes the price, reinvests at the
-/// pushed price and sells back. This measures what the protocol loses (what was added, valued at the price before the
-/// push, against the SOL spent) and what the attacker makes. The cap bounds the loss; it does not prevent it.
+/// Why there is no permissionless fallback: a caller who picks its own band can push the price, reinvest at it and
+/// sell back. The attacker loses money, but the protocol loses part of the call too (measured here at 20 SOL). Only
+/// the keeper can do this now; this documents what a compromised keeper key could cost per call.
 #[test]
-fn a_manipulated_fallback_call_costs_a_bounded_amount() {
-    for push in [5u64, 20, 60] {
-        let mut env = env();
-        let k = migrated(&mut env);
-        pending(&mut env, &k, 10);
-        env.set_time(env.launch(&k).last_reinvest_at + dex::KEEPER_GRACE_SECS);
-        let fair = env.pool_sqrt_price(&k);
-        let attacker = env.dex_trader(push + 2, &k.mint);
-        let ap = pk(&attacker.pubkey());
-        let wsol_start = env.token_balance(&ata(&ap, &WSOL));
-        env.dex_swap(&k, &attacker, push * SOL, true).unwrap();
-        let pushed = env.pool_sqrt_price(&k);
-        let before = env.launch(&k);
-        env.reinvest_lp_at(&k, &attacker, pushed).unwrap();
-        let l = env.launch(&k);
-        let used = before.lp_reinvest_pending - l.lp_reinvest_pending;
-        let tokens = env.token_balance(&ata(&ap, &k.mint));
-        env.dex_swap(&k, &attacker, tokens, false).unwrap();
-        let attacker_pnl = env.token_balance(&ata(&ap, &WSOL)) as i128 - wsol_start as i128;
-        // What the protocol now holds for that SOL: the added liquidity, valued at the price before the push.
-        let (sol, toks) = dex::reserves(l.lp_liquidity - before.lp_liquidity, dex::MIN_SQRT_PRICE, fair, dex::MAX_SQRT_PRICE).unwrap();
-        let loss = used as f64 - (sol as f64 + value(toks as u64, fair));
-        let pct = ((pushed as f64 / fair as f64).powi(2) - 1.0) * 100.0;
-        println!(
-            "REPORT push {push} SOL (+{pct:.1}% price): reinvested {:.4} SOL, protocol loss {:.4} SOL ({:.2}% of it, {:.3}% of pool SOL), attacker {:+.4} SOL",
-            used as f64 / 1e9, loss / 1e9, loss / used as f64 * 100.0, loss / pool_sol(&env, &k) as f64 * 100.0, attacker_pnl as f64 / 1e9
-        );
-        assert!(loss < used as f64 * 0.5, "loss is a fraction of one capped call");
-        assert!(attacker_pnl < 0, "with a 1% pool fee the attacker still loses at {push} SOL");
-    }
+fn a_self_chosen_band_at_a_pushed_price_costs_the_protocol() {
+    let mut env = env();
+    let k = migrated(&mut env);
+    pending(&mut env, &k, 10);
+    let fair = env.pool_sqrt_price(&k);
+    let attacker = env.dex_trader(22, &k.mint);
+    let ap = pk(&attacker.pubkey());
+    let wsol_start = env.token_balance(&ata(&ap, &WSOL));
+    env.dex_swap(&k, &attacker, 20 * SOL, true).unwrap();
+    let pushed = env.pool_sqrt_price(&k);
+    // A stranger cannot use the pushed band at all.
+    expect_err(env.reinvest_lp_at(&k, &attacker, pushed), "KeeperOnly");
+    // A keeper that signs the pushed band (a compromised key) can.
+    let before = env.launch(&k);
+    let keeper = env.admin.insecure_clone();
+    env.reinvest_lp_at(&k, &keeper, pushed).unwrap();
+    let l = env.launch(&k);
+    let used = before.lp_reinvest_pending - l.lp_reinvest_pending;
+    let tokens = env.token_balance(&ata(&ap, &k.mint));
+    env.dex_swap(&k, &attacker, tokens, false).unwrap();
+    let attacker_pnl = env.token_balance(&ata(&ap, &WSOL)) as i128 - wsol_start as i128;
+    let (sol, toks) = dex::reserves(l.lp_liquidity - before.lp_liquidity, dex::MIN_SQRT_PRICE, fair, dex::MAX_SQRT_PRICE).unwrap();
+    let loss = used as f64 - (sol as f64 + value(toks as u64, fair));
+    println!(
+        "REPORT pushed band (+{:.1}% price): reinvested {:.4} SOL, protocol loss {:.4} SOL ({:.1}%), attacker {:+.4} SOL",
+        ((pushed as f64 / fair as f64).powi(2) - 1.0) * 100.0, used as f64 / 1e9, loss / 1e9, loss / used as f64 * 100.0, attacker_pnl as f64 / 1e9
+    );
+    assert!(loss > 0.0 && loss < used as f64 * 0.5);
 }
 
 #[test]

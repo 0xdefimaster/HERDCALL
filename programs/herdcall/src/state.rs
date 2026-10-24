@@ -43,7 +43,7 @@ pub struct Config {
     pub params: LaunchParams,
     /// Meteora DAMM v2 config breakouts create their pool with (checked at breakout, see `damm::read_config`).
     pub dex_config: Pubkey,
-    /// The only caller of `reinvest_lp`, unless a launch has gone `KEEPER_GRACE_SECS` without a reinvest.
+    /// The only caller of `reinvest_lp`. If it stops, the share waits as SOL and the admin appoints another keeper.
     pub reinvest_keeper: Pubkey,
     pub bump: u8,
 }
@@ -152,8 +152,6 @@ pub struct Launch {
     pub lp_reinvest_pending: u64,
     /// SOL of that share already added to the position.
     pub lp_reinvested: u64,
-    /// Breakout time, then the time of the last reinvest.
-    pub last_reinvest_at: i64,
     pub bump: u8,
     pub sol_vault_bump: u8,
     pub creator_fees_bump: u8,

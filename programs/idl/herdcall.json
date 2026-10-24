@@ -650,7 +650,8 @@
     {
       "name": "set_reinvest_keeper",
       "docs": [
-        "Sets the keeper that runs `reinvest_lp` (a protocol service; see CURVE_SPEC §5.7)."
+        "Sets the keeper that runs `reinvest_lp` (a protocol service; see CURVE_SPEC §5.7). This is how reinvesting keeps",
+        "going if a keeper stops: there is no permissionless fallback."
       ],
       "discriminator": [
         161,
@@ -890,9 +891,10 @@
         "amount buys tokens in the pool, then SOL and tokens are added and the new liquidity is locked for good.",
         "",
         "DAMM v2 has no TWAP or oracle, so the program cannot tell a fair price from one moved just before the call. The",
-        "keeper (`Config::reinvest_keeper`) passes a price band (`min_sqrt_price`..`max_sqrt_price`, at most 2% wide)",
-        "from its own observations, and the pool price must be inside it. If a launch goes `KEEPER_GRACE_SECS` without a",
-        "reinvest, anyone may call, with a band of their own. Limits checked here: nothing below 0.01 SOL; per call at",
+        "keeper (`Config::reinvest_keeper`) signs and passes a price band (`min_sqrt_price`..`max_sqrt_price`, at most 2%",
+        "wide) from its own observations, and the pool price must be inside it. Nobody else can reinvest: without a",
+        "keeper the share waits as SOL until the admin appoints one (`set_reinvest_keeper`). Limits checked here: nothing",
+        "below 0.01 SOL; per call at",
         "most min(0.5%, pool fee / 2) of the pool's SOL; the swap returns at least the spot amount less the pool fee and",
         "0.5%, moves the price by at most 0.6% and buys at most 0.5% of the pool's tokens. They bound what one call",
         "puts at risk; they are not a guarantee."
@@ -1449,7 +1451,7 @@
           {
             "name": "reinvest_keeper",
             "docs": [
-              "The only caller of `reinvest_lp`, unless a launch has gone `KEEPER_GRACE_SECS` without a reinvest."
+              "The only caller of `reinvest_lp`. If it stops, the share waits as SOL and the admin appoints another keeper."
             ],
             "type": "pubkey"
           },
@@ -1644,13 +1646,6 @@
               "SOL of that share already added to the position."
             ],
             "type": "u64"
-          },
-          {
-            "name": "last_reinvest_at",
-            "docs": [
-              "Breakout time, then the time of the last reinvest."
-            ],
-            "type": "i64"
           },
           {
             "name": "bump",

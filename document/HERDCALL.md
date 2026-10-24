@@ -514,8 +514,8 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
      gerçek DAMM v2 ile; yerel doğrulayıcıda tam akışın parçası.
    - ✅ **"Likiditeye geri" payı** (`reinvest_lp`, CURVE_SPEC §5.7): DAMM v2'de fiyat çıpası (TWAP/oracle) olmadığı
      için kontrollü keeper akışı. Keeper kendi gözlemlerinden fiyat bandı verir, program bandı ve tavanları kontrol
-     eder. Keeper 7 gün çalışmazsa herkes çağırabilir. Çağrıdan önce fiyat oynatma saldırısı gerçek DAMM v2 ile test
-     edildi.
+     eder. Herkese açık yedek mod yok: keeper durursa pay SOL olarak bekler, yönetici keeper'ı değiştirir. Çağrıdan
+     önce fiyat oynatma saldırısı gerçek DAMM v2 ile test edildi.
    - ⏳ **Keeper hizmeti** (zincir dışı): `claim_lp_fees` ve `reinvest_lp`'yi düzenli çağıran, bandı fiyat
      gözlemlerinden hesaplayan protokol hizmeti. Programdaki kurallar hazır, hizmetin kendisi yazılmadı.
    - ⏳ Meteora'dan HerdCall migrator PDA'sı için **özel config** (mainnet şartı).
