@@ -10,7 +10,7 @@ import { createServer } from 'node:http';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  WSOL, ata, createAtaIx, dexSwapIx, globalKeys, launchKeys, readPool, reinvestCap, wrapSolIxs,
+  withProgramId, WSOL, ata, createAtaIx, dexSwapIx, globalKeys, launchKeys, readPool, reinvestCap, wrapSolIxs,
 } from '../herdcall-client.mjs';
 
 const { web3 } = anchor;
@@ -30,7 +30,7 @@ const admin = web3.Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync
 const connection = new web3.Connection(url, 'confirmed');
 const provider = new anchor.AnchorProvider(connection, new anchor.Wallet(admin), { commitment: 'confirmed' });
 const idl = JSON.parse(readFileSync(new URL('../../programs/idl/herdcall.json', import.meta.url), 'utf8'));
-const program = new anchor.Program(idl, provider);
+const program = new anchor.Program(withProgramId(idl), provider);
 const g = globalKeys();
 const dir = mkdtempSync(join(tmpdir(), 'herdcall-keeper-'));
 

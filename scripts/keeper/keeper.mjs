@@ -15,7 +15,7 @@ import anchor from '@anchor-lang/core';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { homedir } from 'node:os';
-import { claimLpFeesAccounts, globalKeys, launchKeys, readPool, reinvestCap, reinvestLpAccounts } from '../herdcall-client.mjs';
+import { withProgramId, claimLpFeesAccounts, globalKeys, launchKeys, readPool, reinvestCap, reinvestLpAccounts } from '../herdcall-client.mjs';
 import { DEFAULTS, addSample, decide } from './logic.mjs';
 import { MONITOR_DEFAULTS, healthAlerts, healthStatus, recordSend, throttle } from './monitor.mjs';
 import { makeSubmitter } from './submit.mjs';
@@ -54,7 +54,7 @@ const keeper = web3.Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSyn
 const connection = new web3.Connection(url, 'confirmed');
 const provider = new anchor.AnchorProvider(connection, new anchor.Wallet(keeper), { commitment: 'confirmed' });
 const idl = JSON.parse(readFileSync(new URL('../../programs/idl/herdcall.json', import.meta.url), 'utf8'));
-const program = new anchor.Program(idl, provider);
+const program = new anchor.Program(withProgramId(idl), provider);
 const submitter = makeSubmitter({
   connection,
   payer: keeper,

@@ -15,7 +15,7 @@ import { homedir } from 'node:os';
 import { ed25519 } from '@noble/curves/ed25519';
 import * as anchorModule from '@anchor-lang/core';
 import {
-  WSOL, ata, createAtaIx, dexKeysForPool, dexSwapIx, globalKeys, keysOf, launchKeys, wrapSolIxs,
+  withProgramId, WSOL, ata, createAtaIx, dexKeysForPool, dexSwapIx, globalKeys, keysOf, launchKeys, wrapSolIxs,
 } from './herdcall-client.mjs';
 import { tokens } from '../src/chain/format.js';
 
@@ -36,7 +36,7 @@ const adminPath = arg('keypair', `${homedir()}/.config/solana/id.json`).replace(
 const admin = web3.Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(adminPath, 'utf8'))));
 const connection = new web3.Connection(url, 'confirmed');
 const idl = JSON.parse(readFileSync(new URL('../programs/idl/herdcall.json', import.meta.url), 'utf8'));
-const program = new anchor.Program(idl, new anchor.AnchorProvider(connection, new anchor.Wallet(admin), {}));
+const program = new anchor.Program(withProgramId(idl), new anchor.AnchorProvider(connection, new anchor.Wallet(admin), {}));
 
 const step = (s) => console.log(`\n▸ ${s}`);
 const ok = (s) => console.log(`  ✓ ${s}`);
@@ -89,16 +89,17 @@ async function connectWallet(page) {
   if (await button.isVisible().catch(() => false)) await button.click();
 }
 
-/** Clicks a button and waits for the page to confirm the transaction (or fails with its error). */
+/** Clicks a button and waits for a new result line (each has its own data-result id); fails with the page's error. */
 async function sendVia(page, name, { scope = page, timeout = 60_000 } = {}) {
-  const done = page.getByRole('status').or(page.getByText('Done.'));
-  const failed = page.getByRole('alert');
-  // A result line from the previous action must go away first (the page clears it when a new one starts).
-  const stale = await done.or(failed).count();
+  const seen = await page.locator('[data-result]').evaluateAll((els) => els.map((e) => e.dataset.result));
   await scope.getByRole('button', { name, exact: true }).click();
-  if (stale) await done.or(failed).first().waitFor({ state: 'detached', timeout: 10_000 });
-  await done.or(failed).first().waitFor({ timeout });
-  if (await failed.first().isVisible().catch(() => false)) throw new Error(`${name}: ${await failed.first().innerText()}`);
+  const handle = await page.waitForFunction(
+    (prev) => [...document.querySelectorAll('[data-result]')].find((e) => !prev.includes(e.dataset.result))?.dataset.result,
+    seen,
+    { timeout },
+  );
+  const fresh = page.locator(`[data-result="${await handle.jsonValue()}"]`);
+  if ((await fresh.getAttribute('role')) === 'alert') throw new Error(`${name}: ${await fresh.innerText()}`);
 }
 
 async function main() {

@@ -28,14 +28,18 @@ function useNow() {
   return now;
 }
 
+// Each result gets its own id (data-result), so a test or a screen reader can tell a new one from the last.
+let lastId = 0;
+const nextId = () => String(++lastId);
+
 function useAction() {
   const [state, setState] = useState({ busy: null, result: null });
   const run = async (name, fn) => {
     setState({ busy: name, result: null });
     try {
-      setState({ busy: null, result: { name, signature: await fn() } });
+      setState({ busy: null, result: { id: nextId(), name, signature: await fn() } });
     } catch (e) {
-      setState({ busy: null, result: { name, error: programError(e?.logs) ?? e?.message ?? String(e) } });
+      setState({ busy: null, result: { id: nextId(), name, error: programError(e?.logs) ?? e?.message ?? String(e) } });
     }
   };
   return { ...state, run };
@@ -43,9 +47,9 @@ function useAction() {
 
 function Result({ result }) {
   if (!result) return null;
-  if (result.error) return <p role="alert" className="m-0 text-hc-down break-words">{result.error}</p>;
+  if (result.error) return <p role="alert" data-result={result.id} className="m-0 text-hc-down break-words">{result.error}</p>;
   return (
-    <p role="status" className="m-0 text-hc-up break-words">
+    <p role="status" data-result={result.id} className="m-0 text-hc-up break-words">
       Confirmed. <a href={explorerTx(result.signature)} target="_blank" rel="noreferrer" className="underline">View transaction</a>
     </p>
   );

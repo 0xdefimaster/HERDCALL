@@ -1,6 +1,11 @@
-// The smallest full HerdCall run, for a controlled mainnet smoke test, and its local rehearsal.
+// The smallest full HerdCall run, for a controlled mainnet rehearsal, and its local rehearsal.
 //
-// One wallet (admin, creator, depositor, trader) and a separate keeper key. Steps: initialize with the test-scale
+// Runs where the test wallet's key is: on its owner's computer, with a keypair file of a separate test wallet (never the
+// main wallet). Nothing in this repository or in a cloud container holds that key.
+//
+// One wallet (admin, creator, depositor, trader) and, for the full stage, a separate keeper key. Launches are unbonded
+// by default (`--bonded` for bonded): the program has no instruction yet that releases a bonded creator's escrow, so a
+// bonded launch would leave half of the creator fees locked. Steps: initialize with the test-scale
 // preset, appoint the keeper, create the launch, one 0.1 SOL Lobby deposit, settle, claim, a small buy and sell, buy out
 // the curve, breakout into DAMM v2 (whole position locked), round trips on the pool so fees accrue, claim the pool fees,
 // the keeper service reinvests the liquidity share, sell the tokens back, withdraw the creator fees. Every lamport the
@@ -14,11 +19,13 @@
 // its rent can be recovered with `solana program close` from a wallet outside this machine).
 //
 //   Rehearsal (local validator, mainnet programs): node scripts/mainnet-smoke.mjs --keypair <upgrade authority>
-//   Plan only (no transaction):                    node scripts/mainnet-smoke.mjs --plan --url <mainnet rpc> --keypair <w> --keeper <k> --dex-config <c>
+//   Plan only (no transaction):                    node scripts/mainnet-smoke.mjs --plan --url <mainnet rpc> --keypair <w> [--keeper <k>] --dex-config <c|none>
 //   Mainnet (after approval):                      ... --live --approve <token printed by --plan>
+// With a program id other than the default, set HERDCALL_PROGRAM_ID to it for the build and for this script.
 //
-// --live refuses to run unless the RPC's genesis hash is mainnet's and --approve matches the plan's token: a hash of
-// the wallet, keeper, program, DAMM config and the maximum it may spend. The program itself is deployed before, with
+// --live refuses to run unless the RPC's genesis hash is mainnet's, the deployed program's bytes hash to the given
+// binary (--so), and --approve matches the plan's token: a hash of the wallet, keeper, program, binary, launch mode,
+// DAMM config, addresses and the maximum it may spend. The program itself is deployed before, with
 // `solana program deploy` (its rent is in the plan; it comes back with `solana program close`).
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -27,7 +34,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as anchorModule from '@anchor-lang/core';
 import {
-  PROGRAM_ID, WSOL, adminAccounts, ata, breakoutAccounts, claimAccounts, claimLpFeesAccounts, createAtaIx,
+  PROGRAM_ID, WSOL, adminAccounts, withProgramId, ata, breakoutAccounts, claimAccounts, claimLpFeesAccounts, createAtaIx,
   createLaunchAccounts, depositAccounts, dexSwapIx, globalKeys, initializeAccounts, launchKeys, launchParams, nameHash,
   readPool, settleAccounts, tradeAccounts, withdrawCreatorFeesAccounts, wrapSolIxs,
 } from './herdcall-client.mjs';
@@ -57,6 +64,8 @@ const sweepTo = arg('sweep-to', null) && new web3.PublicKey(arg('sweep-to'));
 const authorityTo = arg('upgrade-authority-to', null) && new web3.PublicKey(arg('upgrade-authority-to'));
 const wallet = web3.Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(path(arg('keypair', '~/.config/solana/id.json')), 'utf8'))));
 const keeperPath = arg('keeper', null);
+if (stage === 'full' && !keeperPath) throw new Error('--stage full needs --keeper <keypair> (its own key, not the wallet)');
+const bonded = flag('bonded');
 const keeper = keeperPath ? web3.Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(path(keeperPath), 'utf8')))) : web3.Keypair.generate();
 const ticker = arg('ticker', stage === 'lobby' ? 'HCSMOKE1' : 'HCSMOKE2');
 const name = arg('name', `HerdCall Smoke Test ${stage === 'lobby' ? 1 : 2}`);
@@ -78,7 +87,7 @@ const MAX_SPEND = BigInt(Math.round(Number(arg('max-spend-sol', stage === 'lobby
 
 const connection = new web3.Connection(url, 'confirmed');
 const program = new anchor.Program(
-  JSON.parse(readFileSync(new URL('../programs/idl/herdcall.json', import.meta.url), 'utf8')),
+  withProgramId(JSON.parse(readFileSync(new URL('../programs/idl/herdcall.json', import.meta.url), 'utf8'))),
   new anchor.AnchorProvider(connection, new anchor.Wallet(wallet), { commitment: 'confirmed' }),
 );
 const g = globalKeys();
@@ -87,7 +96,8 @@ const k = launchKeys(mint.publicKey, ticker, name);
 
 function approvalToken() {
   const plan = {
-    stage, wallet: wallet.publicKey.toBase58(), keeper: keeper.publicKey.toBase58(), program: PROGRAM_ID.toBase58(),
+    stage, bonded, wallet: wallet.publicKey.toBase58(), keeper: keeperPath ? keeper.publicKey.toBase58() : null,
+    program: PROGRAM_ID.toBase58(), soSha256: createHash('sha256').update(readFileSync(so)).digest('hex'),
     dexConfig: dexConfig.toBase58(), ticker, name, maxSpend: MAX_SPEND.toString(), sweepTo: sweepTo?.toBase58() ?? null,
     upgradeAuthorityTo: authorityTo?.toBase58() ?? null,
   };
@@ -167,6 +177,14 @@ async function main() {
     throw new Error('this RPC is mainnet: a rehearsal runs only on a local validator; use --plan, then --live with an approval');
   }
   if (!programInfo?.executable) throw new Error(`program ${PROGRAM_ID.toBase58()} is not deployed on ${url}`);
+  // The deployed bytes must be the binary the plan names: program data = 45 bytes of header, the ELF, zero padding.
+  const programData = web3.PublicKey.findProgramAddressSync([PROGRAM_ID.toBuffer()], UPGRADEABLE_LOADER)[0];
+  const deployed = (await connection.getAccountInfo(programData))?.data;
+  const elf = deployed?.subarray(45, 45 + soSize);
+  if (!elf || createHash('sha256').update(elf).digest('hex') !== plan.soSha256 || deployed.subarray(45 + soSize).some((b) => b !== 0)) {
+    throw new Error(`the deployed program is not ${so} (sha256 ${plan.soSha256})`);
+  }
+  console.log(`deployed program matches ${so} (sha256 ${plan.soSha256})`);
   const start = await balances();
   if (!live && start.w < 10 * SOL) {
     await connection.confirmTransaction(await connection.requestAirdrop(wallet.publicKey, 20 * SOL), 'confirmed');
@@ -203,15 +221,15 @@ async function main() {
       if (!new web3.PublicKey(after.subarray(13, 45)).equals(authorityTo)) throw new Error('upgrade authority did not change');
     }
   }
-  if (!(existing?.reinvestKeeper.equals(keeper.publicKey))) {
+  if (keeperPath && !(existing?.reinvestKeeper.equals(keeper.publicKey))) {
     await step('appoint the keeper', () => rpc(program.methods.setReinvestKeeper(keeper.publicKey).accountsStrict(adminAccounts(wallet.publicKey))));
   }
   if (stage === 'full' && (await connection.getBalance(keeper.publicKey)) < KEEPER_FUND) {
     await step('fund the keeper', () => sendTx([web3.SystemProgram.transfer({ fromPubkey: wallet.publicKey, toPubkey: keeper.publicKey, lamports: KEEPER_FUND })], [wallet]),
       `${KEEPER_FUND / SOL} SOL`, KEEPER_FUND);
   }
-  await step('create_launch', () => rpc(program.methods.createLaunch(true, new BN(15), ticker, name, nameHash(name), uri).accountsStrict(createLaunchAccounts(wallet.publicKey, k)), [mint]),
-    'mint, metadata (Metaplex fee), records, vaults; bond held');
+  await step('create_launch', () => rpc(program.methods.createLaunch(bonded, new BN(15), ticker, name, nameHash(name), uri).accountsStrict(createLaunchAccounts(wallet.publicKey, k)), [mint]),
+    `${bonded ? 'bonded' : 'unbonded'}: mint, metadata (Metaplex fee), records, vaults; bond held`);
   await step('deposit (Lobby)', () => rpc(program.methods.deposit(new BN(LOBBY)).accountsStrict(depositAccounts(wallet.publicKey, k))), `${LOBBY / SOL} SOL, the minimum`, LOBBY);
   await track();
   const l0 = await program.account.launch.fetch(k.launch);

@@ -27,7 +27,14 @@ pub mod state;
 use errors::{core_err, HerdError};
 use state::*;
 
-declare_id!("EPh2hoECkDTsSeHCriDwsF8DhVGhCjxwrbtC3qqyoJ8K");
+// The program id. The default is the one the tests, the local validator and the devnet keypair use. A deploy under
+// another id (the mainnet trial, from a keypair its owner keeps) builds with HERDCALL_PROGRAM_ID=<that address>.
+declare_id!(Pubkey::from_str_const(match option_env!("HERDCALL_PROGRAM_ID") {
+    Some(id) => id,
+    None => DEFAULT_PROGRAM_ID,
+}));
+
+pub const DEFAULT_PROGRAM_ID: &str = "EPh2hoECkDTsSeHCriDwsF8DhVGhCjxwrbtC3qqyoJ8K";
 
 #[program]
 pub mod herdcall {

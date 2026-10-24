@@ -31,13 +31,17 @@ function upgradeAuthority(data) {
 
 function Result({ result }) {
   if (!result) return null;
-  if (result.error) return <p role="alert" className="m-0 text-hc-down break-words">{result.error}</p>;
+  if (result.error) return <p role="alert" data-result={result.id} className="m-0 text-hc-down break-words">{result.error}</p>;
   return (
-    <p className="m-0 text-hc-up break-words">
+    <p data-result={result.id} className="m-0 text-hc-up break-words">
       Done. <a href={explorerTx(result.signature)} target="_blank" rel="noreferrer" className="underline">View transaction</a>
     </p>
   );
 }
+
+// Each result gets its own id (data-result), so a test or a screen reader can tell a new one from the last.
+let lastId = 0;
+const nextId = () => String(++lastId);
 
 function useAction() {
   const [busy, setBusy] = useState(false);
@@ -46,9 +50,9 @@ function useAction() {
     setBusy(true);
     setResult(null);
     try {
-      setResult({ signature: await fn() });
+      setResult({ id: nextId(), signature: await fn() });
     } catch (e) {
-      setResult({ error: programError(e?.logs) ?? e?.message ?? String(e) });
+      setResult({ id: nextId(), error: programError(e?.logs) ?? e?.message ?? String(e) });
     } finally {
       setBusy(false);
     }
@@ -73,11 +77,13 @@ const asKey = (s) => {
   }
 };
 
-function Initialize({ authority }) {
+// `action` lives in the page: a successful initialize loads the config, which replaces this card, and the result must
+// outlive it.
+function Initialize({ authority, action }) {
   const { program, user, send } = useHerdCall();
   const [preset, setPreset] = useState('devnet');
   const [dexConfig, setDexConfig] = useState('');
-  const { busy, result, run } = useAction();
+  const { busy, result, run } = action;
   const params = launchParams(preset);
   const dex = asKey(dexConfig);
   const isAuthority = user && authority && user.equals(authority);
@@ -192,6 +198,7 @@ function Revenue() {
 
 export default function Setup() {
   const hc = useHerdCall();
+  const initAction = useAction();
   const { data: authority } = usePoll(async () => {
     if (!hc.connection) return null;
     const info = await hc.connection.getAccountInfo(hc.programData);
@@ -230,7 +237,13 @@ export default function Setup() {
             )}
           </div>
           <div className="flex-[1_1_420px] min-w-0 flex flex-col gap-6">
-            {hc.deployed && !hc.config && <Initialize authority={authority} />}
+            {hc.deployed && !hc.config && <Initialize authority={authority} action={initAction} />}
+            {hc.config && initAction.result && (
+              <Card className="flex flex-col gap-2">
+                <CardTitle>Initialized</CardTitle>
+                <Result result={initAction.result} />
+              </Card>
+            )}
             {hc.config && <AdminActions config={hc.config} />}
             {hc.config && <Revenue />}
           </div>

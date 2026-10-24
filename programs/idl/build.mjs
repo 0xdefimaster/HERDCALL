@@ -1,7 +1,7 @@
 // Builds the Anchor IDL of the HerdCall program without the Anchor CLI: runs the program's IDL print tests
 // (`idl-build` feature) and merges their output the way `anchor idl build` does. Run: npm run idl
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,10 +16,10 @@ const out = execFileSync(
 const sections = [...out.matchAll(/--- IDL begin (\w+) ---\n([\s\S]*?)\n--- IDL end \1 ---/g)].map(([, kind, body]) => [kind, body]);
 const one = (kind) => sections.find(([k]) => k === kind)?.[1];
 const idl = JSON.parse(one('program'));
-// The address section is the address string, quoted (sometimes twice).
-let address = JSON.parse(one('address'));
-if (address.startsWith('"')) address = JSON.parse(address);
-idl.address = address;
+// The address section is the declare_id! input. The program takes its id from HERDCALL_PROGRAM_ID at build time, so
+// the IDL records the same: that variable, or the default in lib.rs.
+const DEFAULT_ID = /DEFAULT_PROGRAM_ID: &str = "(\w+)"/.exec(readFileSync(join(programs, 'herdcall/src/lib.rs'), 'utf8'))[1];
+idl.address = process.env.HERDCALL_PROGRAM_ID || DEFAULT_ID;
 const types = new Map(idl.types.map((t) => [t.name, t]));
 const events = [];
 for (const [kind, body] of sections) {

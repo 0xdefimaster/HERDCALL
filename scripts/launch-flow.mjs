@@ -9,7 +9,7 @@ import anchor from '@anchor-lang/core';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import {
-  PROGRAM_ID, DAMM, METADATA_PROGRAM, WSOL, breakoutAccounts, canonicalTicker, claimAccounts, claimLpFeesAccounts,
+  withProgramId, PROGRAM_ID, DAMM, METADATA_PROGRAM, WSOL, breakoutAccounts, canonicalTicker, claimAccounts, claimLpFeesAccounts,
   createAtaIx, createLaunchAccounts, depositAccounts, dexKeys, dexSwapIx, globalKeys, initializeAccounts,
   launchParams as presetParams, launchKeys, nameHash, reinvestLpAccounts, REINVEST_MIN_LAMPORTS, settleAccounts,
   tradeAccounts, wrapSolIxs,
@@ -39,7 +39,7 @@ const payer = web3.Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync
 const connection = new web3.Connection(url, 'confirmed');
 const provider = new anchor.AnchorProvider(connection, new anchor.Wallet(payer), { commitment: 'confirmed' });
 const idl = JSON.parse(readFileSync(new URL('../programs/idl/herdcall.json', import.meta.url), 'utf8'));
-const program = new anchor.Program(idl, provider);
+const program = new anchor.Program(withProgramId(idl), provider);
 const g = globalKeys();
 const cu = web3.ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }); // breakout measured about 211k
 

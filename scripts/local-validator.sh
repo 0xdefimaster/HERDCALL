@@ -10,6 +10,8 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 fx="$root/programs/fixtures"
 ledger="${LEDGER:-$root/programs/target/test-ledger}"
 authority="$(solana-keygen pubkey "${KEYPAIR:-$HOME/.config/solana/id.json}")"
+# The program id: HERDCALL_PROGRAM_ID if set (the build reads it too), else the default in programs/herdcall/src/lib.rs.
+program_id="${HERDCALL_PROGRAM_ID:-EPh2hoECkDTsSeHCriDwsF8DhVGhCjxwrbtC3qqyoJ8K}"
 [ -f "$fx/damm_v2.so" ] || "$fx/fetch.sh"
 if [ -n "${DEVNET:-}" ]; then
   cargo build-sbf --manifest-path "$root/programs/herdcall/Cargo.toml" --features devnet -- --target-dir "$root/programs/target/devnet"
@@ -28,7 +30,7 @@ writeFileSync('$ledger.config.json', JSON.stringify({ pubkey: 'AeLtDKgw3XnXbr3Kg
   executable: false, rentEpoch: 0, space: d.length } }));
 "
 exec solana-test-validator --reset --quiet --ledger "$ledger" \
-  --upgradeable-program EPh2hoECkDTsSeHCriDwsF8DhVGhCjxwrbtC3qqyoJ8K "$so" "$authority" \
+  --upgradeable-program "$program_id" "$so" "$authority" \
   --bpf-program metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s "$fx/mpl_token_metadata.so" \
   --bpf-program cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG "$fx/damm_v2.so" \
   --account AeLtDKgw3XnXbr3Kgfbcb7KiZULVCQ5mXaFDiG9n7EgW "$ledger.config.json"

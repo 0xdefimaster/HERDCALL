@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import * as anchor from '@anchor-lang/core';
 import idl from '../../programs/idl/herdcall.json';
-import { PROGRAM_ID, globalKeys, programDataKey } from '../../scripts/herdcall-client.mjs';
+import { withProgramId, PROGRAM_ID, globalKeys, programDataKey } from '../../scripts/herdcall-client.mjs';
 import { useWallet } from '../wallet/WalletContext';
 import { CHAIN_ENABLED, CLUSTER, RPC_URL } from './config';
 
@@ -30,7 +30,7 @@ export function HerdCallProvider({ children }) {
   const program = useMemo(() => {
     if (!connection) return null;
     const provider = new anchor.AnchorProvider(connection, readOnlyWallet(user ?? web3.PublicKey.default), { commitment: 'confirmed' });
-    return new anchor.Program(idl, provider);
+    return new anchor.Program(withProgramId(idl), provider);
   }, [connection, user]);
 
   const [status, setStatus] = useState({ loading: CHAIN_ENABLED, deployed: false, config: null, error: null });

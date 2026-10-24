@@ -8,7 +8,15 @@ const anchor = anchorModule.default ?? anchorModule;
 const { web3 } = anchor;
 const { PublicKey } = web3;
 
-export const PROGRAM_ID = new PublicKey('EPh2hoECkDTsSeHCriDwsF8DhVGhCjxwrbtC3qqyoJ8K');
+// The default id (programs/herdcall/src/lib.rs); a build under another id (the mainnet trial) sets HERDCALL_PROGRAM_ID
+// for scripts or VITE_PROGRAM_ID for the web client, the same address the program was built with.
+export const DEFAULT_PROGRAM_ID = 'EPh2hoECkDTsSeHCriDwsF8DhVGhCjxwrbtC3qqyoJ8K';
+export const PROGRAM_ID = new PublicKey(
+  globalThis.process?.env?.HERDCALL_PROGRAM_ID || import.meta.env?.VITE_PROGRAM_ID || DEFAULT_PROGRAM_ID,
+);
+
+/** The IDL with the address this client uses (the IDL file carries the default id). */
+export const withProgramId = (idl) => ({ ...idl, address: PROGRAM_ID.toBase58() });
 export const DAMM = new PublicKey('cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG');
 export const DAMM_POOL_AUTHORITY = new PublicKey('HLnpSz9h2S4hiLQ43rnSD9XkcUThA7B8hQMKmDaiTLcC');
 export const METADATA_PROGRAM = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
