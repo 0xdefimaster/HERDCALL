@@ -11,7 +11,7 @@ import { homedir } from 'node:os';
 import {
   PROGRAM_ID, DAMM, METADATA_PROGRAM, TOKEN_PROGRAM, ATA_PROGRAM, SYSTEM, RENT,
   WSOL, ata, breakoutAccounts, canonicalTicker, claimLpFeesAccounts, createAtaIx, depositKey, dexKeys, dexSwapIx,
-  globalKeys, launchKeys, nameHash, wrapSolIxs,
+  globalKeys, launchKeys, nameHash, reinvestLpAccounts, REINVEST_MIN_LAMPORTS, wrapSolIxs,
 } from './herdcall-client.mjs';
 
 const { web3, BN } = anchor;
@@ -200,6 +200,21 @@ async function main() {
   check(l.lpFeesClaimed.toNumber() > 0, `claimed ${l.lpFeesClaimed.toNumber() / SOL} SOL of pool fees`);
   check(paid + l.lpReinvestPending.toNumber() === l.lpFeesClaimed.toNumber(),
     `creator, Rekt-back and protocol paid; ${l.lpReinvestPending.toNumber() / SOL} SOL held for liquidity`);
+
+  step('reinvest the "back to liquidity" share');
+  const reinvest = program.methods.reinvestLp().accountsStrict(reinvestLpAccounts(payer.publicKey, k, dexConfig)).preInstructions([cu]);
+  if (l.lpReinvestPending.toNumber() < REINVEST_MIN_LAMPORTS) {
+    const err = await reinvest.rpc().then(() => null, (e) => e);
+    check(err && String(err).includes('NothingToReinvest'), `below 0.01 SOL: rejected, keeps waiting`);
+  } else {
+    const liquidityBefore = BigInt(l.lpLiquidity.toString());
+    await reinvest.rpc();
+    l = await program.account.launch.fetch(k.launch);
+    const lockedNow = (await connection.getAccountInfo(d.position)).data;
+    const lockedAfter = lockedNow.readBigUInt64LE(184) + (lockedNow.readBigUInt64LE(192) << 64n);
+    check(BigInt(l.lpLiquidity.toString()) > liquidityBefore && lockedAfter === BigInt(l.lpLiquidity.toString()),
+      `${l.lpReinvested.toNumber() / SOL} SOL added to the position and locked; ${l.lpReinvestPending.toNumber() / SOL} SOL waits`);
+  }
   console.log('\nAll steps passed.');
 }
 

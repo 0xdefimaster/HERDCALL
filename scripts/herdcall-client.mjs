@@ -187,3 +187,32 @@ export function wrapSolIxs(owner, lamports) {
     new web3.TransactionInstruction({ programId: TOKEN_PROGRAM, keys: [{ pubkey: w, isWritable: true, isSigner: false }], data: Buffer.from([17]) }),
   ];
 }
+
+/** Accounts of `reinvest_lp` for anchor's accountsStrict. */
+export function reinvestLpAccounts(caller, k, dexConfig) {
+  const g = globalKeys();
+  const d = dexKeys(dexConfig, k);
+  return {
+    caller,
+    launch: k.launch,
+    mint: k.mint,
+    nativeMint: WSOL,
+    solVault: k.solVault,
+    migrator: g.migrator,
+    reinvestWsol: pda([enc('reinvest_wsol'), k.launch.toBuffer()]),
+    reinvestToken: pda([enc('reinvest_token'), k.launch.toBuffer()]),
+    pool: d.pool,
+    position: d.position,
+    positionNftAccount: d.positionNftAccount,
+    poolTokenVault: d.poolTokenVault,
+    poolWsolVault: d.poolWsolVault,
+    poolAuthority: DAMM_POOL_AUTHORITY,
+    dexEventAuthority: d.eventAuthority,
+    dexProgram: DAMM,
+    tokenProgram: TOKEN_PROGRAM,
+    systemProgram: SYSTEM,
+  };
+}
+
+/** Pending "back to liquidity" SOL below this waits (herdcall_core::dex::REINVEST_MIN_LAMPORTS). */
+export const REINVEST_MIN_LAMPORTS = 10_000_000;

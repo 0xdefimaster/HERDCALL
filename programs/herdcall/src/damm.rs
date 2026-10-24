@@ -16,6 +16,9 @@ pub const POOL_AUTHORITY: Pubkey = Pubkey::from_str_const("HLnpSz9h2S4hiLQ43rnSD
 const IX_INITIALIZE_POOL: [u8; 8] = [95, 180, 10, 172, 84, 174, 232, 40];
 const IX_PERMANENT_LOCK_POSITION: [u8; 8] = [165, 176, 125, 6, 231, 171, 186, 213];
 const IX_CLAIM_POSITION_FEE: [u8; 8] = [180, 38, 154, 17, 133, 33, 162, 211];
+const IX_SWAP: [u8; 8] = [248, 198, 158, 145, 225, 117, 135, 200];
+const IX_ADD_LIQUIDITY: [u8; 8] = [181, 157, 89, 67, 143, 182, 52, 72];
+const POOL_DISCRIMINATOR: [u8; 8] = [241, 154, 109, 4, 17, 177, 109, 188];
 const CONFIG_DISCRIMINATOR: [u8; 8] = [155, 12, 170, 224, 30, 250, 204, 130];
 const CONFIG_LEN: usize = 8 + 320;
 
@@ -192,6 +195,126 @@ pub fn claim_position_fee(a: &ClaimPositionFee, signers: &[&[&[u8]]]) -> Result<
     let infos = [
         a.pool_authority, a.pool, a.position, a.token_a_account, a.token_b_account, a.token_a_vault, a.token_b_vault,
         a.token_a_mint, a.token_b_mint, a.position_nft_account, a.owner, a.token_program, a.event_authority, a.program,
+    ]
+    .map(|i| i.clone());
+    invoke_signed(&ix, &infos, signers).map_err(Into::into)
+}
+
+/// Liquidity and price of a pool (`Pool` is zero-copy; offsets after the discriminator from cp_amm's state/pool.rs).
+pub struct PoolState {
+    pub liquidity: u128,
+    pub sqrt_min_price: u128,
+    pub sqrt_max_price: u128,
+    pub sqrt_price: u128,
+}
+
+pub fn read_pool(acc: &AccountInfo) -> Result<PoolState> {
+    require_keys_eq!(*acc.owner, PROGRAM_ID, HerdError::WrongAccount);
+    let d = acc.try_borrow_data()?;
+    require!(d.len() >= 8 + 1104 && d[..8] == POOL_DISCRIMINATOR, HerdError::WrongAccount);
+    let d = &d[8..];
+    Ok(PoolState {
+        liquidity: u128_at(d, 352),
+        sqrt_min_price: u128_at(d, 416),
+        sqrt_max_price: u128_at(d, 432),
+        sqrt_price: u128_at(d, 448),
+    })
+}
+
+/// Pool accounts shared by `swap` and `add_liquidity`.
+pub struct PoolAccounts<'a, 'info> {
+    pub pool_authority: &'a AccountInfo<'info>,
+    pub pool: &'a AccountInfo<'info>,
+    pub token_a_vault: &'a AccountInfo<'info>,
+    pub token_b_vault: &'a AccountInfo<'info>,
+    pub token_a_mint: &'a AccountInfo<'info>,
+    pub token_b_mint: &'a AccountInfo<'info>,
+    pub token_program: &'a AccountInfo<'info>,
+    pub event_authority: &'a AccountInfo<'info>,
+    pub program: &'a AccountInfo<'info>,
+}
+
+/// Swaps `amount_in` of `input`'s token for the other token into `output`; fails below `minimum_amount_out`.
+#[allow(clippy::too_many_arguments)]
+pub fn swap<'info>(
+    p: &PoolAccounts<'_, 'info>,
+    input: &AccountInfo<'info>,
+    output: &AccountInfo<'info>,
+    payer: &AccountInfo<'info>,
+    amount_in: u64,
+    minimum_amount_out: u64,
+    signers: &[&[&[u8]]],
+) -> Result<()> {
+    let w = |k: &AccountInfo| AccountMeta::new(k.key(), false);
+    let r = |k: &AccountInfo| AccountMeta::new_readonly(k.key(), false);
+    let accounts = vec![
+        r(p.pool_authority),
+        w(p.pool),
+        w(input),
+        w(output),
+        w(p.token_a_vault),
+        w(p.token_b_vault),
+        r(p.token_a_mint),
+        r(p.token_b_mint),
+        AccountMeta::new_readonly(payer.key(), true),
+        r(p.token_program),
+        r(p.token_program),
+        r(p.program), // no referral account
+        r(p.event_authority),
+        r(p.program),
+    ];
+    let mut data = IX_SWAP.to_vec();
+    data.extend_from_slice(&amount_in.to_le_bytes());
+    data.extend_from_slice(&minimum_amount_out.to_le_bytes());
+    let ix = Instruction { program_id: PROGRAM_ID, accounts, data };
+    let infos = [
+        p.pool_authority, p.pool, input, output, p.token_a_vault, p.token_b_vault, p.token_a_mint, p.token_b_mint, payer,
+        p.token_program, p.event_authority, p.program,
+    ]
+    .map(|i| i.clone());
+    invoke_signed(&ix, &infos, signers).map_err(Into::into)
+}
+
+/// Adds `liquidity` to the position, taking at most `max_a` / `max_b` from the owner's token accounts.
+#[allow(clippy::too_many_arguments)]
+pub fn add_liquidity<'info>(
+    p: &PoolAccounts<'_, 'info>,
+    position: &AccountInfo<'info>,
+    token_a_account: &AccountInfo<'info>,
+    token_b_account: &AccountInfo<'info>,
+    position_nft_account: &AccountInfo<'info>,
+    owner: &AccountInfo<'info>,
+    liquidity: u128,
+    max_a: u64,
+    max_b: u64,
+    signers: &[&[&[u8]]],
+) -> Result<()> {
+    let w = |k: &AccountInfo| AccountMeta::new(k.key(), false);
+    let r = |k: &AccountInfo| AccountMeta::new_readonly(k.key(), false);
+    let accounts = vec![
+        w(p.pool),
+        w(position),
+        w(token_a_account),
+        w(token_b_account),
+        w(p.token_a_vault),
+        w(p.token_b_vault),
+        r(p.token_a_mint),
+        r(p.token_b_mint),
+        r(position_nft_account),
+        AccountMeta::new_readonly(owner.key(), true),
+        r(p.token_program),
+        r(p.token_program),
+        r(p.event_authority),
+        r(p.program),
+    ];
+    let mut data = IX_ADD_LIQUIDITY.to_vec();
+    data.extend_from_slice(&liquidity.to_le_bytes());
+    data.extend_from_slice(&max_a.to_le_bytes());
+    data.extend_from_slice(&max_b.to_le_bytes());
+    let ix = Instruction { program_id: PROGRAM_ID, accounts, data };
+    let infos = [
+        p.pool, position, token_a_account, token_b_account, p.token_a_vault, p.token_b_vault, p.token_a_mint,
+        p.token_b_mint, position_nft_account, owner, p.token_program, p.event_authority, p.program,
     ]
     .map(|i| i.clone());
     invoke_signed(&ix, &infos, signers).map_err(Into::into)

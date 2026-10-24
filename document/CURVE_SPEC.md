@@ -212,18 +212,31 @@ sabit çarpım havuzu kullanır; tam aralıklı DAMM pozisyonu buna çok yakınd
 Sınır yaklaşık **2 × havuz ücreti**dir. 120 SOL'lük ve %1 ücretli havuzda 2 SOL'e kadar her ekleme güvenli; 4 SOL'de
 sandviç 0,19, 8 SOL'de 1,57 SOL kazanır.
 
-Öneri, herkes çağırabilen bir `reinvest_lp` talimatı:
-1. Tutar: $\min(\text{bekleyen},\ c \cdot \text{havuzdaki SOL})$. Önerilen $c$ = %1, yani %1'lik havuzda güvenli
-   sınırın yarısı.
-2. Bu tutarın gereken kısmıyla havuzdan token alır.
-3. `add_liquidity` ile pozisyona ekler ve `permanent_lock_position` ile ekleneni de kilitler.
-4. Kalan, bir sonraki çağrıya bekler.
+**Karar ve uygulama (programda, testli): herkes çağırabilen `reinvest_lp`.** Sınırların hepsi program içinde,
+`herdcall-core::dex`'te sabittir:
 
-Ayrıca en küçük parti olmalı (ör. 0,01 SOL), toz eklemeler önlensin. Başka yollar:
-- (b) yalnızca protokol keeper'ı özel paketle (Jito) çağırır: merkezî bir adım;
-- (c) payın kuralı değişir (ör. geri alım ve yakım): aynı sandviç hesabı geçerli, ürün kararı.
+| Sınır | Değer |
+|---|---|
+| En küçük parti | Bekleyen pay 0,01 SOL'e ulaşmadan işlem yapılmaz; küçük tutarlar sayaçta birikir |
+| Çağrı başına tavan | Havuzun likiditesindeki SOL'ün %0,5'i (modeldeki ~%2,05 kârlılık eşiğinin dörtte biri); kalanı sonraki çağrıya bekler |
+| Takas kayması | Takas, çağrı öncesi spot fiyattan (ücretsiz, etkisiz) hesaplanan token miktarının en az %97'sini vermeli |
+| Fiyat hareketi | Takas havuz fiyatını en fazla %0,6 yükseltebilir |
+| Token miktarı | Bir çağrıda alınan token, havuz likiditesindeki tokenin en fazla %0,5'i |
 
-**Karar gereken:** yol (öneri: a), $c$ ve en küçük parti.
+Bir çağrının adımları:
+1. Tutarın yarısıyla havuzdan token alır.
+2. Yeni fiyatta sığan en büyük likiditeyi ekler ve onu da `permanent_lock_position` ile kilitler.
+3. Artan birkaç token birimi yakılır; kullanılmayan SOL kasada beklemeye devam eder.
+4. Çağıran yalnızca işlem ücretini öder.
+
+**Bunlar garanti değildir.** Sınırlar tek işlemde riske giren miktarı küçültür; çağrıdan önce oynatılmış bir fiyatı fark
+etmez. Kayma sınırı da çağrı öncesindeki (belki oynatılmış) fiyata göre ölçülür. Simülasyondaki eşik, sabit çarpım
+modeli ve %1 ücret varsayımıyla bir modeldir.
+
+Gerçek DAMM v2 programıyla yapılan testte 1, 5, 20 ve 60 SOL'lük sandviçler zarar etti (yaklaşık saldırı tutarının
+%1,5'i). Bu yalnızca denenen durumlar içindir. Fiyat hareketi ve token sınırları, çağrı tavanının zaten sağladığı
+şeylerin yedeğidir. Testlerde tetiklenemezler; bilerek kaldırıldıklarında testler bunu yakalamaz. Kayma sınırı ise
+testlidir: havuz ücreti kasten %40'a çıkarıldığında çağrı reddedilir.
 
 **5.8 Breakout sonrası ücret dağılımı ve "tut, kazan"**
 

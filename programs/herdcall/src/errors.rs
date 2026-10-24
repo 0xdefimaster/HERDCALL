@@ -56,6 +56,10 @@ pub enum HerdError {
     NotMigrated,
     #[msg("No fees to claim")]
     NoFees,
+    #[msg("Less than the minimum is waiting to be reinvested")]
+    NothingToReinvest,
+    #[msg("Reinvest would exceed its on-chain limits")]
+    ReinvestLimit,
     #[msg("Name and ticker are held until the launch is cancelled or breaks out")]
     NameNotReleasable,
 }

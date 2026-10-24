@@ -648,6 +648,55 @@ impl Env {
     }
 }
 
+impl Env {
+    pub fn reinvest_lp_accounts(&self, k: &LaunchKeys, caller: &Pubkey) -> herdcall::accounts::ReinvestLp {
+        let d = dex_keys(k);
+        herdcall::accounts::ReinvestLp {
+            caller: *caller,
+            launch: k.launch,
+            mint: k.mint,
+            native_mint: WSOL,
+            sol_vault: k.sol_vault,
+            migrator: migrator(),
+            reinvest_wsol: pda(&[REINVEST_WSOL_SEED, k.launch.as_ref()]),
+            reinvest_token: pda(&[REINVEST_TOKEN_SEED, k.launch.as_ref()]),
+            pool: d.pool,
+            position: d.position,
+            position_nft_account: d.position_nft_account,
+            pool_token_vault: d.token_vault,
+            pool_wsol_vault: d.wsol_vault,
+            pool_authority: herdcall::damm::POOL_AUTHORITY,
+            dex_event_authority: damm_pda(&[b"__event_authority"]),
+            dex_program: DAMM,
+            token_program: anchor_spl::token::ID,
+            system_program: anchor_lang::system_program::ID,
+        }
+    }
+
+    pub fn reinvest_lp(&mut self, k: &LaunchKeys, caller: &Keypair) -> Result<(), String> {
+        let accounts = self.reinvest_lp_accounts(k, &pk(&caller.pubkey()));
+        let ix = self.ix(accounts.to_account_metas(None), herdcall::instruction::ReinvestLp {}.data());
+        self.send(ix, &[caller])
+    }
+
+    /// Rewrites a launch account (tests that need a state normal use would take long to reach).
+    pub fn patch_launch(&mut self, k: &LaunchKeys, f: impl FnOnce(&mut Launch)) {
+        let mut l = self.launch(k);
+        f(&mut l);
+        let mut acc = self.svm.get_account(&addr(&k.launch)).unwrap();
+        let mut data = Vec::new();
+        anchor_lang::AccountSerialize::try_serialize(&l, &mut data).unwrap();
+        acc.data[..data.len()].copy_from_slice(&data);
+        self.svm.set_account(addr(&k.launch), acc).unwrap();
+    }
+
+    pub fn add_lamports(&mut self, k: &Pubkey, lamports: u64) {
+        let mut acc = self.svm.get_account(&addr(k)).unwrap();
+        acc.lamports += lamports;
+        self.svm.set_account(addr(k), acc).unwrap();
+    }
+}
+
 /// sha256("global:swap")[..8]
 pub fn swap_discriminator() -> [u8; 8] {
     [248, 198, 158, 145, 225, 117, 135, 200]

@@ -852,6 +852,95 @@
       "args": []
     },
     {
+      "name": "reinvest_lp",
+      "docs": [
+        "Permissionless. Adds the \"back to liquidity\" share of the claimed fees to the locked position (CURVE_SPEC §5.7):",
+        "half of the amount buys tokens in the pool, then SOL and tokens are added and the new liquidity is locked for",
+        "good. Limits, all checked here: nothing below 0.01 SOL; at most 0.5% of the pool's SOL per call (the rest",
+        "waits); the swap returns at least the spot amount less 3%, moves the price by at most 0.6% and buys at most 0.5%",
+        "of the pool's tokens. They bound what one call puts at risk; they do not detect a price moved before the call."
+      ],
+      "discriminator": [
+        58,
+        109,
+        207,
+        80,
+        91,
+        36,
+        207,
+        103
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "launch",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "native_mint"
+        },
+        {
+          "name": "sol_vault",
+          "writable": true
+        },
+        {
+          "name": "migrator",
+          "writable": true
+        },
+        {
+          "name": "reinvest_wsol",
+          "writable": true
+        },
+        {
+          "name": "reinvest_token",
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "position_nft_account"
+        },
+        {
+          "name": "pool_token_vault",
+          "writable": true
+        },
+        {
+          "name": "pool_wsol_vault",
+          "writable": true
+        },
+        {
+          "name": "pool_authority"
+        },
+        {
+          "name": "dex_event_authority"
+        },
+        {
+          "name": "dex_program"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "release_name",
       "docs": [
         "Permissionless. Frees the name and ticker of a cancelled launch (Lobby below the minimum, or not settled before",
@@ -1192,6 +1281,44 @@
       }
     },
     {
+      "name": "LpReinvested",
+      "type": {
+        "fields": [
+          {
+            "name": "launch",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "SOL taken from the pending share: the part swapped plus the part added."
+            ],
+            "name": "sol",
+            "type": "u64"
+          },
+          {
+            "name": "swapped",
+            "type": "u64"
+          },
+          {
+            "name": "tokens",
+            "type": "u64"
+          },
+          {
+            "name": "liquidity",
+            "type": "u128"
+          },
+          {
+            "docs": [
+              "Still waiting after this call."
+            ],
+            "name": "pending",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
       "name": "NameReleased",
       "type": {
         "fields": [
@@ -1452,6 +1579,13 @@
             "name": "lp_reinvest_pending",
             "docs": [
               "The \"back to liquidity\" share of those fees, held in the SOL vault until it is added to the position."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "lp_reinvested",
+            "docs": [
+              "SOL of that share already added to the position."
             ],
             "type": "u64"
           },
@@ -1722,6 +1856,19 @@
     },
     {
       "discriminator": [
+        241,
+        241,
+        169,
+        6,
+        123,
+        71,
+        103,
+        177
+      ],
+      "name": "LpReinvested"
+    },
+    {
+      "discriminator": [
         40,
         189,
         0,
@@ -1898,6 +2045,16 @@
     },
     {
       "code": 6027,
+      "name": "NothingToReinvest",
+      "msg": "Less than the minimum is waiting to be reinvested"
+    },
+    {
+      "code": 6028,
+      "name": "ReinvestLimit",
+      "msg": "Reinvest would exceed its on-chain limits"
+    },
+    {
+      "code": 6029,
       "name": "NameNotReleasable",
       "msg": "Name and ticker are held until the launch is cancelled or breaks out"
     }

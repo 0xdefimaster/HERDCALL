@@ -93,6 +93,57 @@ pub fn fit(max_a: u64, max_b: u64, sqrt_min: u128, sqrt_price: u128, sqrt_max: u
     Ok(Deposit { liquidity, sqrt_price, a: a as u64, b: b as u64 })
 }
 
+// ---------------------------------------------------------------- reinvesting the "back to liquidity" share
+//
+// CURVE_SPEC §5.7: fees arrive as SOL; part of it buys tokens in the same pool, then both are added to the locked
+// position. Anyone can call it, so a call can be sandwiched. These limits keep what one call puts at risk small; they
+// are not a guarantee (a price moved before the call is not detected).
+
+/// Pending SOL below this waits for more fees.
+pub const REINVEST_MIN_LAMPORTS: u64 = 10_000_000;
+/// SOL reinvested in one call: at most this share of the SOL in the pool's liquidity.
+pub const REINVEST_MAX_POOL_BPS: u128 = 50;
+/// The swap must return at least the spot amount (pool price before the call, no fee) less this.
+pub const REINVEST_MAX_SLIPPAGE_BPS: u128 = 300;
+/// The swap may move the pool price up by at most this.
+pub const REINVEST_MAX_PRICE_MOVE_BPS: u128 = 60;
+/// Tokens bought in one call: at most this share of the tokens in the pool's liquidity.
+pub const REINVEST_MAX_TOKEN_BPS: u128 = 50;
+
+/// SOL (token B) and tokens (token A) held by `liquidity` at `sqrt_price` over the range.
+pub fn reserves(liquidity: u128, sqrt_min: u128, sqrt_price: u128, sqrt_max: u128) -> Result<(u128, u128)> {
+    Ok((amount_b(liquidity, sqrt_min, sqrt_price)?, amount_a(liquidity, sqrt_price, sqrt_max)?))
+}
+
+/// How much of `pending` to reinvest now: `None` below the minimum, otherwise capped by the pool's SOL.
+pub fn reinvest_amount(pending: u64, pool_sol: u128) -> Option<u64> {
+    if pending < REINVEST_MIN_LAMPORTS {
+        return None;
+    }
+    let cap = pool_sol * REINVEST_MAX_POOL_BPS / crate::BPS;
+    let amount = (pending as u128).min(cap) as u64;
+    (amount >= REINVEST_MIN_LAMPORTS).then_some(amount)
+}
+
+/// Tokens `sol` buys at `sqrt_price` with no fee and no price impact: sol · 2^128 / √p².
+pub fn spot_tokens(sol: u64, sqrt_price: u128) -> Result<u128> {
+    let p2 = U512::from(sqrt_price) * U512::from(sqrt_price);
+    to_u128_512((U512::from(sol) << 128usize) / p2)
+}
+
+/// Least tokens the reinvest swap must return.
+pub fn reinvest_min_out(sol: u64, sqrt_price: u128) -> Result<u64> {
+    let spot = spot_tokens(sol, sqrt_price)?;
+    u64::try_from(spot * (crate::BPS - REINVEST_MAX_SLIPPAGE_BPS) / crate::BPS).map_err(|_| Error::Overflow)
+}
+
+/// Whether the price after the swap stays within the allowed move: √after² ≤ √before² · (1 + move).
+pub fn price_move_ok(sqrt_before: u128, sqrt_after: u128) -> bool {
+    let before = U512::from(sqrt_before) * U512::from(sqrt_before);
+    let after = U512::from(sqrt_after) * U512::from(sqrt_after);
+    after * U512::from(crate::BPS) <= before * U512::from(crate::BPS + REINVEST_MAX_PRICE_MOVE_BPS)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,6 +205,23 @@ mod tests {
                 assert!(d.a <= a && d.b <= b);
             }
         }
+    }
+
+    #[test]
+    fn reinvest_limits() {
+        let pool_sol = 120 * SOL as u128;
+        assert_eq!(reinvest_amount(REINVEST_MIN_LAMPORTS - 1, pool_sol), None, "below the minimum");
+        assert_eq!(reinvest_amount(SOL / 10, pool_sol), Some(SOL / 10));
+        assert_eq!(reinvest_amount(5 * SOL, pool_sol), Some(6 * SOL / 10), "capped at 0.5% of the pool's SOL");
+        // A pool too small for the minimum under the cap waits.
+        assert_eq!(reinvest_amount(SOL, (REINVEST_MIN_LAMPORTS as u128) * 100), None);
+        let s = sqrt_price_ceil(150 * SOL as u128, 200_000_000 * TOKEN as u128).unwrap();
+        // 1 SOL at 150 SOL / 200M tokens is about 1.33M tokens.
+        let spot = spot_tokens(SOL, s).unwrap();
+        assert!(spot > 1_333_000 * TOKEN as u128 && spot <= 1_333_334 * TOKEN as u128, "{spot}");
+        assert_eq!(reinvest_min_out(SOL, s).unwrap() as u128, spot * 97 / 100);
+        assert!(price_move_ok(s, s) && price_move_ok(s, s + s / 400));
+        assert!(!price_move_ok(s, s + s / 300));
     }
 
     #[test]

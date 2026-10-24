@@ -23,6 +23,9 @@ pub const MIGRATOR_WSOL_SEED: &[u8] = b"migrator_wsol";
 pub const POSITION_NFT_SEED: &[u8] = b"position_nft";
 /// Temporary wrapped SOL account the locked position's fees are claimed into.
 pub const LP_FEE_WSOL_SEED: &[u8] = b"lp_fee_wsol";
+/// Temporary accounts of a reinvest: the SOL being reinvested and the tokens it buys.
+pub const REINVEST_WSOL_SEED: &[u8] = b"reinvest_wsol";
+pub const REINVEST_TOKEN_SEED: &[u8] = b"reinvest_token";
 
 pub const TOKEN_DECIMALS: u8 = 6;
 /// Metaplex limit for the metadata URI (JSON with the image and description).
@@ -145,6 +148,8 @@ pub struct Launch {
     pub lp_fees_claimed: u64,
     /// The "back to liquidity" share of those fees, held in the SOL vault until it is added to the position.
     pub lp_reinvest_pending: u64,
+    /// SOL of that share already added to the position.
+    pub lp_reinvested: u64,
     pub bump: u8,
     pub sol_vault_bump: u8,
     pub creator_fees_bump: u8,

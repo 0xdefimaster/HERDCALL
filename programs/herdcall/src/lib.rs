@@ -525,6 +525,124 @@ pub mod herdcall {
         Ok(())
     }
 
+    /// Permissionless. Adds the "back to liquidity" share of the claimed fees to the locked position (CURVE_SPEC §5.7):
+    /// half of the amount buys tokens in the pool, then SOL and tokens are added and the new liquidity is locked for
+    /// good. Limits, all checked here: nothing below 0.01 SOL; at most 0.5% of the pool's SOL per call (the rest
+    /// waits); the swap returns at least the spot amount less 3%, moves the price by at most 0.6% and buys at most 0.5%
+    /// of the pool's tokens. They bound what one call puts at risk; they do not detect a price moved before the call.
+    pub fn reinvest_lp(ctx: Context<ReinvestLp>) -> Result<()> {
+        require!(ctx.accounts.launch.phase == Phase::Migrated, HerdError::NotMigrated);
+        let a = &ctx.accounts;
+        let before = damm::read_pool(&a.pool.to_account_info())?;
+        let (pool_sol, pool_tokens) =
+            dex::reserves(before.liquidity, before.sqrt_min_price, before.sqrt_price, before.sqrt_max_price).map_err(core_err)?;
+        let amount = dex::reinvest_amount(a.launch.lp_reinvest_pending, pool_sol).ok_or(HerdError::NothingToReinvest)?;
+        let swap_in = amount / 2;
+        let min_out = dex::reinvest_min_out(swap_in, before.sqrt_price).map_err(core_err)?;
+
+        let mint_key = a.launch.mint;
+        let bump = [a.launch.bump];
+        let launch_seeds: &[&[u8]] = &[LAUNCH_SEED, mint_key.as_ref(), &bump];
+        let migrator_bump = [ctx.bumps.migrator];
+        let migrator_seeds: &[&[u8]] = &[MIGRATOR_SEED, &migrator_bump];
+        let launch_info = a.launch.to_account_info();
+        let migrator = a.migrator.to_account_info();
+        let sol_vault = a.sol_vault.to_account_info();
+        let system = a.system_program.key();
+        let token_program = a.token_program.key();
+        let wsol = a.reinvest_wsol.to_account_info();
+        let tokens = a.reinvest_token.to_account_info();
+
+        // Wrap the amount through the migrator so a CPI sees both sides of the vault's lamport move (see breakout).
+        pay_from_vault(&sol_vault, &migrator, amount)?;
+        transfer_signed(system, &migrator, &sol_vault, 0, migrator_seeds)?;
+        transfer_signed(system, &migrator, &wsol, amount, migrator_seeds)?;
+        token::sync_native(CpiContext::new(token_program, SyncNative { account: wsol.clone() }))?;
+
+        let pool_accounts = damm::PoolAccounts {
+            pool_authority: &a.pool_authority.to_account_info(),
+            pool: &a.pool.to_account_info(),
+            token_a_vault: &a.pool_token_vault.to_account_info(),
+            token_b_vault: &a.pool_wsol_vault.to_account_info(),
+            token_a_mint: &a.mint.to_account_info(),
+            token_b_mint: &a.native_mint.to_account_info(),
+            token_program: &a.token_program.to_account_info(),
+            event_authority: &a.dex_event_authority.to_account_info(),
+            program: &a.dex_program.to_account_info(),
+        };
+        damm::swap(&pool_accounts, &wsol, &tokens, &launch_info, swap_in, min_out, &[launch_seeds])?;
+        let mut bought_acc = a.reinvest_token.clone();
+        bought_acc.reload()?;
+        let bought = bought_acc.amount;
+        let after = damm::read_pool(&a.pool.to_account_info())?;
+        require!(
+            bought as u128 <= pool_tokens * dex::REINVEST_MAX_TOKEN_BPS / BPS && dex::price_move_ok(before.sqrt_price, after.sqrt_price),
+            HerdError::ReinvestLimit
+        );
+
+        // Add what fits at the new price and lock it with the rest of the position.
+        let sol_left = amount - swap_in;
+        let dep = dex::fit(bought, sol_left, after.sqrt_min_price, after.sqrt_price, after.sqrt_max_price).map_err(core_err)?;
+        damm::add_liquidity(
+            &pool_accounts,
+            &a.position.to_account_info(),
+            &tokens,
+            &wsol,
+            &a.position_nft_account.to_account_info(),
+            &launch_info,
+            dep.liquidity,
+            bought,
+            sol_left,
+            &[launch_seeds],
+        )?;
+        damm::permanent_lock_position(
+            &a.pool.to_account_info(),
+            &a.position.to_account_info(),
+            &a.position_nft_account.to_account_info(),
+            &launch_info,
+            &a.dex_event_authority.to_account_info(),
+            &a.dex_program.to_account_info(),
+            dep.liquidity,
+            &[launch_seeds],
+        )?;
+
+        // Leftovers: a few token units are burned; unused SOL goes back to the vault and keeps waiting; the caller gets
+        // the temporary accounts' rent back.
+        let left_tokens = bought - dep.a;
+        if left_tokens > 0 {
+            token::burn(
+                CpiContext::new_with_signer(
+                    token_program,
+                    Burn { mint: a.mint.to_account_info(), from: tokens.clone(), authority: launch_info.clone() },
+                    &[launch_seeds],
+                ),
+                left_tokens,
+            )?;
+        }
+        token::close_account(CpiContext::new_with_signer(
+            token_program,
+            CloseAccount { account: tokens.clone(), destination: a.caller.to_account_info(), authority: launch_info.clone() },
+            &[launch_seeds],
+        ))?;
+        let left_sol = sol_left - dep.b;
+        let wsol_rent = wsol.lamports().checked_sub(left_sol).ok_or(HerdError::MathOverflow)?;
+        token::close_account(CpiContext::new_with_signer(
+            token_program,
+            CloseAccount { account: wsol.clone(), destination: sol_vault.clone(), authority: launch_info.clone() },
+            &[launch_seeds],
+        ))?;
+        pay_from_vault(&sol_vault, &a.caller.to_account_info(), wsol_rent)?;
+
+        let used = swap_in.checked_add(dep.b).ok_or(HerdError::MathOverflow)?;
+        let l = &mut ctx.accounts.launch;
+        l.lp_reinvest_pending = l.lp_reinvest_pending.checked_sub(used).ok_or(HerdError::MathOverflow)?;
+        l.lp_reinvested = l.lp_reinvested.checked_add(used).ok_or(HerdError::MathOverflow)?;
+        l.lp_liquidity = l.lp_liquidity.checked_add(dep.liquidity).ok_or(HerdError::MathOverflow)?;
+        l.burned = l.burned.checked_add(left_tokens).ok_or(HerdError::MathOverflow)?;
+        emit!(LpReinvested { launch: l.key(), sol: used, swapped: swap_in, tokens: dep.a, liquidity: dep.liquidity, pending: l.lp_reinvest_pending });
+        Ok(())
+    }
+
     /// Permissionless. Frees the name and ticker of a cancelled launch (Lobby below the minimum, or not settled before
     /// its deadline). Once the curve opens they are permanent. Both records close; their rent and the bond go back to
     /// the creator.
@@ -949,6 +1067,51 @@ pub struct ClaimLpFees<'info> {
 }
 
 #[derive(Accounts)]
+pub struct ReinvestLp<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(mut, seeds = [LAUNCH_SEED, launch.mint.as_ref()], bump = launch.bump)]
+    pub launch: Box<Account<'info, Launch>>,
+    #[account(mut, address = launch.mint)]
+    pub mint: Box<Account<'info, Mint>>,
+    #[account(address = native_mint::ID)]
+    pub native_mint: Box<Account<'info, Mint>>,
+    #[account(mut, seeds = [SOL_VAULT_SEED, launch.key().as_ref()], bump = launch.sol_vault_bump)]
+    pub sol_vault: Box<Account<'info, Vault>>,
+    /// CHECK: system-owned PDA without data, empty before and after.
+    #[account(mut, seeds = [MIGRATOR_SEED], bump)]
+    pub migrator: UncheckedAccount<'info>,
+    #[account(init, payer = caller, seeds = [REINVEST_WSOL_SEED, launch.key().as_ref()], bump, token::mint = native_mint, token::authority = launch)]
+    pub reinvest_wsol: Box<Account<'info, TokenAccount>>,
+    #[account(init, payer = caller, seeds = [REINVEST_TOKEN_SEED, launch.key().as_ref()], bump, token::mint = mint, token::authority = launch)]
+    pub reinvest_token: Box<Account<'info, TokenAccount>>,
+    /// CHECK: the launch's pool, recorded at breakout; owner and layout checked by `damm::read_pool`.
+    #[account(mut, address = launch.dex_pool @ HerdError::WrongAccount)]
+    pub pool: UncheckedAccount<'info>,
+    /// CHECK: the launch's position, recorded at breakout.
+    #[account(mut, address = launch.dex_position @ HerdError::WrongAccount)]
+    pub position: UncheckedAccount<'info>,
+    /// CHECK: checked by DAMM (holds the position NFT, owned by the launch PDA).
+    pub position_nft_account: UncheckedAccount<'info>,
+    /// CHECK: checked by DAMM (`has_one` on the pool).
+    #[account(mut)]
+    pub pool_token_vault: UncheckedAccount<'info>,
+    /// CHECK: checked by DAMM (`has_one` on the pool).
+    #[account(mut)]
+    pub pool_wsol_vault: UncheckedAccount<'info>,
+    /// CHECK: DAMM's pool authority.
+    #[account(address = damm::POOL_AUTHORITY)]
+    pub pool_authority: UncheckedAccount<'info>,
+    /// CHECK: checked by DAMM (event CPI).
+    pub dex_event_authority: UncheckedAccount<'info>,
+    /// CHECK: the real DAMM v2 program.
+    #[account(address = damm::PROGRAM_ID, executable)]
+    pub dex_program: UncheckedAccount<'info>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct ReleaseName<'info> {
     #[account(mut, seeds = [TICKER_SEED, launch.ticker.as_bytes()], bump = ticker_record.bump, has_one = launch @ HerdError::WrongAccount, close = creator)]
     pub ticker_record: Account<'info, NameRecord>,
@@ -1011,6 +1174,18 @@ pub struct LpFeesClaimed {
     pub protocol: u64,
     /// Part of the creator share lost to a lower lock ratio (already counted in `rekt_back`).
     pub forfeited: u64,
+}
+
+#[event]
+pub struct LpReinvested {
+    pub launch: Pubkey,
+    /// SOL taken from the pending share: the part swapped plus the part added.
+    pub sol: u64,
+    pub swapped: u64,
+    pub tokens: u64,
+    pub liquidity: u128,
+    /// Still waiting after this call.
+    pub pending: u64,
 }
 
 #[event]
