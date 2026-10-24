@@ -42,6 +42,10 @@ pub enum HerdError {
     WrongAccount,
     #[msg("Vault would drop below rent exemption")]
     VaultUnderfunded,
+    #[msg("Ticker must be 1-10 characters of A-Z and 0-9")]
+    InvalidTicker,
+    #[msg("Ticker is still held by its launch")]
+    NameNotReleasable,
 }
 
 pub fn core_err(e: herdcall_core::Error) -> Error {

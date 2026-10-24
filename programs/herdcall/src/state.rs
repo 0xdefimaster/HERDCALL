@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use herdcall_core::curve::{CurveState, MarketParams, Phase as CorePhase};
 use herdcall_core::fees::Kind;
+use herdcall_core::names::LaunchStatus;
 use herdcall_core::stampede::LobbyParams;
 
 pub const CONFIG_SEED: &[u8] = b"config";
@@ -12,6 +13,7 @@ pub const CREATOR_FEES_SEED: &[u8] = b"creator_fees";
 pub const CREATOR_ESCROW_SEED: &[u8] = b"creator_escrow";
 pub const DEPOSIT_SEED: &[u8] = b"deposit";
 pub const INTERFACE_SEED: &[u8] = b"interface";
+pub const NAME_SEED: &[u8] = b"name";
 
 pub const TOKEN_DECIMALS: u8 = 6;
 pub const MAX_LOBBY_SECS: i64 = 3_600;
@@ -40,6 +42,8 @@ pub struct LaunchParams {
     pub max_per_wallet: u64,
     pub migration_fee: u64,
     pub settle_window: i64,
+    /// How long after the Lobby closes a launch that has not broken out keeps its ticker.
+    pub name_hold_secs: i64,
 }
 
 impl LaunchParams {
@@ -88,8 +92,12 @@ pub struct Launch {
     pub bonded: bool,
     pub phase: Phase,
     pub params: LaunchParams,
+    #[max_len(10)]
+    pub ticker: String,
     pub close_at: i64,
     pub settle_deadline: i64,
+    /// The ticker can be released after this time unless the token has broken out.
+    pub name_expires_at: i64,
     // Lobby
     pub total_deposits: u64,
     pub depositors: u32,
@@ -120,6 +128,16 @@ impl Launch {
             Kind::Bonded
         } else {
             Kind::Unbonded
+        }
+    }
+
+    pub fn name_status(&self, now: i64) -> LaunchStatus {
+        match self.phase {
+            Phase::Lobby if now >= self.settle_deadline => LaunchStatus::LobbyExpired,
+            Phase::Lobby => LaunchStatus::Lobby,
+            Phase::Cancelled => LaunchStatus::LobbyExpired,
+            Phase::Curve => LaunchStatus::Curve,
+            Phase::BreakingOut | Phase::Migrating | Phase::Migrated => LaunchStatus::BrokeOut,
         }
     }
 
@@ -160,6 +178,16 @@ pub struct Deposit {
     pub owner: Pubkey,
     pub amount: u64,
     pub withdrawn: bool,
+    pub bump: u8,
+}
+
+/// Ticker reservation, one per canonical ticker. Held by `launch` while it is active, permanent once it breaks out;
+/// otherwise anyone can close it after the launch is cancelled or its hold time passes (rent goes back to the creator).
+#[account]
+#[derive(InitSpace)]
+pub struct NameRecord {
+    pub launch: Pubkey,
+    pub permanent: bool,
     pub bump: u8,
 }
 

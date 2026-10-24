@@ -6,6 +6,7 @@
 
 pub mod curve;
 pub mod fees;
+pub mod names;
 pub mod stampede;
 
 /// Basis-point denominator.

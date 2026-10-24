@@ -395,6 +395,24 @@ On-chain kısım **Anchor (Rust)** ile yazılacak:
   taşır, fazla LP tokenini yakar, Meteora DAMM v2 pozisyonunu kalıcı kilitler; pozisyon NFT'si programın hesabında durur (CURVE_SPEC §5). Mint / freeze yetkisi token oluşturulurken kaldırılır.
 - `herd_vault` + `builders_fund`: protokol payının kasaları (token öncesi birikim).
 
+**İsim (ticker) rezervasyonu** (programda var, testli)
+
+Aynı ticker'la ikinci bir launch açılamaz; ama kimse popüler bir ticker'ı bedelsiz ve süresiz kapatamaz.
+
+| Durum | Ticker |
+|---|---|
+| Lobby açık veya settlement penceresinde | Launch'a ayrılmış, aynı ticker'la launch açılamaz |
+| Curve'de, bekleme süresi dolmadı (`name_hold_secs`, şimdilik 7 gün, Lobby kapanışından itibaren) | Ayrılmış |
+| Breakout'a ulaştı | **Kalıcı**, bir daha serbest kalmaz |
+| Lobby settle edilmeden süresi doldu (iptal) | Herkes `release_name` çağırıp serbest bırakabilir |
+| Curve'de, bekleme süresi doldu ve breakout yok | Herkes serbest bırakabilir; token işlem görmeye devam eder |
+
+- Anahtar: kanonik ticker, 1–10 karakter, yalnızca A–Z ve 0–9 (`pepe`, `Pepe`, `PEPE` aynı kayıt). İstemci büyük harfe
+  çevirir; program kanonik olmayanı reddeder.
+- Kayıt kapanınca kirası creator'a döner. Serbest bırakılmış ticker'ı yeni bir launch alırsa ve eski token sonradan
+  breakout yaparsa, breakout yine çalışır ama yeni sahibin kaydına dokunmaz.
+- Henüz yok: rezervasyon için bond veya ücret (açık soru, §14), Metaplex token metadata'sı (ad, sembol, görsel).
+
 **Kod yapısı ve araç zinciri**
 - `programs/herdcall-core`: saf Rust, tam sayı ve taşma kontrollü aritmetik. Programdaki tüm hesaplar buradan gelir.
 - `programs/herdcall`: Anchor 1.2 programı; hesap yapıları, talimatlar (Meteora DAMM v2 çağrıları sıradaki iş).
@@ -440,8 +458,10 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
      ([`programs/herdcall-tests`](../programs/herdcall-tests), LiteSVM, `npm run test:program`) derlenmiş programı
      çalıştırır ve her sonucu çekirdekle karşılaştırır: tam yaşam döngüsü, zaman ve aşama kuralları, boş Lobby, kayma
      limiti, sahte hesaplar, cüzdan ve Lobby sınırları, kira tabanı. Programa bilerek eklenen 9 hatanın 9'unu yakalar.
+   - ✅ **Ticker rezervasyonu** (§12): aktifken ayrılmış, breakout'ta kalıcı, iptal veya zaman aşımında serbest.
+     Uçtan uca testler; bilerek eklenen 6 hatanın 5'ini yakalar (kalan biri davranışı değiştirmeyen yedek kontrol).
    - ⏳ Meteora DAMM v2 havuzunun açılması ve LP'nin kalıcı kilidi (breakout şimdilik fonları ayırıp `Migrating`
-     aşamasında bekler), isim rezervasyonu, devnet kurulumu ve devnet'te aynı testler.
+     aşamasında bekler), Metaplex token metadata'sı, devnet kurulumu ve devnet'te aynı testler.
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
    açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda. İsteğe bağlı **Creator Bounty** (§4).
 3. **Şeffaflık ve keşif deneyimi:** Gerçek token verileri, işlem geçmişi, creator geçmişi, token yetkileri ve
@@ -468,6 +488,8 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
 - **Limit fiyat (v2 adayı):** "En fazla şu mcap'e kadar alırım" emri (STAMPEDE_SPEC §11).
 - Curve: kilitli Meteora pozisyonunun ücret dağıtımı (%25 likiditeye önerisi, kalanı?), geçiş ücreti, breakout'a ulaşmayan tokendeki Stampede fazlalığı, program yükseltme yetkisi (CURVE_SPEC §10). ✅ Karar verilen: $T_0$ = 1 milyar, Meteora DAMM v2, LP kalıcı kilit.
 - Create fee miktarı
+- Ticker rezervasyonu: bond veya ücret olacak mı, ne kadar; bekleme süresi (`name_hold_secs`, şimdilik 7 gün);
+  anahtar ticker mı, ad mı, ikisi birden mi (şimdilik ticker)
 - Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı
 - Operasyon tabanının aylık tutarı
