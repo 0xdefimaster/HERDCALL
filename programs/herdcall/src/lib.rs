@@ -7,6 +7,8 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::metadata::mpl_token_metadata::types::DataV2;
+use anchor_spl::metadata::{create_metadata_accounts_v3, CreateMetadataAccountsV3, Metadata};
 use anchor_spl::token::{self, spl_token::instruction::AuthorityType, Burn, Mint, MintTo, SetAuthority, Token, TokenAccount, Transfer};
 use herdcall_core::curve::Market;
 use herdcall_core::fees::{split_fee, FeeParts};
@@ -38,13 +40,25 @@ pub mod herdcall {
         Ok(())
     }
 
-    /// Creates the token (fixed supply, no mint or freeze authority), reserves its name and ticker against the
-    /// refundable bond and opens its Lobby for `lobby_secs` seconds. Fails if another launch holds the name or ticker.
-    /// `name_hash` is `name_seed(name)`, computed by the client to address the name record.
-    pub fn create_launch(ctx: Context<CreateLaunch>, bonded: bool, lobby_secs: i64, ticker: String, name: String, name_hash: [u8; 32]) -> Result<()> {
+    /// Creates the token (fixed supply, no mint or freeze authority, immutable Metaplex metadata: name, ticker as
+    /// symbol, `uri`), reserves its name and ticker against the refundable bond and opens its Lobby for `lobby_secs`
+    /// seconds. Fails if another launch holds the name or ticker. `name_hash` is `name_seed(name)`, computed by the
+    /// client to address the name record.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_launch(
+        ctx: Context<CreateLaunch>,
+        bonded: bool,
+        lobby_secs: i64,
+        ticker: String,
+        name: String,
+        name_hash: [u8; 32],
+        uri: String,
+    ) -> Result<()> {
         require!(lobby_secs > 0 && lobby_secs <= MAX_LOBBY_SECS, HerdError::InvalidParams);
         require!(is_canonical_ticker(ticker.as_bytes()), HerdError::InvalidTicker);
         require!(name_seed(&name).ok_or(HerdError::InvalidName)? == name_hash, HerdError::NameHashMismatch);
+        require!(uri.len() <= MAX_URI_LEN, HerdError::InvalidUri);
+        let name = name.trim().to_string();
         let now = Clock::get()?.unix_timestamp;
         let params = ctx.accounts.config.params;
         let mint_key = ctx.accounts.mint.key();
@@ -93,6 +107,27 @@ pub mod herdcall {
                 signer,
             ),
             params.total_supply,
+        )?;
+        // Metadata needs the mint authority, so it comes before the authority is dropped. Immutable: nobody can change
+        // the name, symbol or image later, and there is no update authority to hand over.
+        create_metadata_accounts_v3(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_metadata_program.key(),
+                CreateMetadataAccountsV3 {
+                    metadata: ctx.accounts.metadata.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
+                    mint_authority: ctx.accounts.launch.to_account_info(),
+                    payer: ctx.accounts.creator.to_account_info(),
+                    update_authority: ctx.accounts.launch.to_account_info(),
+                    system_program: ctx.accounts.system_program.to_account_info(),
+                    rent: ctx.accounts.rent.to_account_info(),
+                },
+                signer,
+            ),
+            DataV2 { name: name.clone(), symbol: ticker.clone(), uri, seller_fee_basis_points: 0, creators: None, collection: None, uses: None },
+            false,
+            true,
+            None,
         )?;
         token::set_authority(
             CpiContext::new_with_signer(
@@ -458,7 +493,7 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(bonded: bool, lobby_secs: i64, ticker: String, name: String, name_hash: [u8; 32])]
+#[instruction(bonded: bool, lobby_secs: i64, ticker: String, name: String, name_hash: [u8; 32], uri: String)]
 pub struct CreateLaunch<'info> {
     #[account(mut)]
     pub creator: Signer<'info>,
@@ -480,9 +515,14 @@ pub struct CreateLaunch<'info> {
     pub ticker_record: Account<'info, NameRecord>,
     #[account(init, payer = creator, space = 8 + NameRecord::INIT_SPACE, seeds = [NAME_SEED, name_hash.as_ref()], bump)]
     pub name_record: Account<'info, NameRecord>,
+    /// CHECK: the mint's Metaplex metadata PDA, created by the Token Metadata program.
+    #[account(mut, seeds = [b"metadata", token_metadata_program.key().as_ref(), mint.key().as_ref()], bump, seeds::program = token_metadata_program.key())]
+    pub metadata: UncheckedAccount<'info>,
+    pub token_metadata_program: Program<'info, Metadata>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]

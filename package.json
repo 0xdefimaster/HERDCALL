@@ -20,7 +20,7 @@
     "sim:names": "node sim/name-bond-run.js",
     "vectors": "node sim/vectors.js",
     "test:core": "cd programs/herdcall-core && cargo test",
-    "test:program": "cd programs && cargo build-sbf --manifest-path herdcall/Cargo.toml && cargo test -p herdcall-tests"
+    "test:program": "cd programs && (ls fixtures/*.so >/dev/null 2>&1 || ./fixtures/fetch.sh) && cargo build-sbf --manifest-path herdcall/Cargo.toml && cargo test -p herdcall-tests"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0",

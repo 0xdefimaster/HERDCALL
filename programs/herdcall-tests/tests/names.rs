@@ -57,9 +57,12 @@ fn only_valid_tickers_and_names() {
             creator_escrow: pda(&[CREATOR_ESCROW_SEED, launch.as_ref()]),
             ticker_record: ticker_pda("PEPE"),
             name_record: name_pda("Other Coin"),
+            metadata: metadata_pda(&m),
+            token_metadata_program: anchor_spl::metadata::ID,
             token_program: anchor_spl::token::ID,
             associated_token_program: anchor_spl::associated_token::ID,
             system_program: anchor_lang::system_program::ID,
+            rent: anchor_lang::solana_program::rent::ID,
         },
         None,
     );
@@ -69,13 +72,14 @@ fn only_valid_tickers_and_names() {
         ticker: "PEPE".into(),
         name: "Pepe Coin".into(),
         name_hash: name_hash("Other Coin"),
+        uri: String::new(),
     });
     let ix = env.ix(metas, data);
     expect_err(env.send(ix, &[&creator, &mint]), "NameHashMismatch");
 
     let k = env.create_launch_full(true, 60, "PEPE2", "  Pepe Two ").unwrap();
     let l = env.launch(&k);
-    assert_eq!((l.ticker.as_str(), l.name.as_str()), ("PEPE2", "  Pepe Two "));
+    assert_eq!((l.ticker.as_str(), l.name.as_str()), ("PEPE2", "Pepe Two"), "stored without surrounding whitespace");
     held_by(&env, &k, false);
 }
 

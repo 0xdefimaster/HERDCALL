@@ -437,13 +437,19 @@ bağlanır; Lobby iptal olursa serbest kalır. Curve'de süre sınırı yok.
   büyütür (toplu kapatma, 1.000 ad için +250 SOL). Minimumu yükseltmek kapatmayı karesel pahalılaştırır ama her
   gerçek launch'ın bu tutarı en fazla 1 saatlik Lobby'de toplamasını şart koşar.
 - Kayıtlar devredilemez; kapatıcı adı güvenilir biçimde satamaz.
-- Henüz yok: Metaplex token metadata'sı (ad, sembol, görsel). Benzer görünen harfler (ör. Kiril `а` / Latin `a`) ve
+- **Token metadata (Metaplex):** `create_launch` gerçek Token Metadata programıyla metadata hesabını açar: ad (baştaki
+  ve sondaki boşluklar atılmış), ticker sembol olarak, `uri` (en fazla 200 bayt; görsel ve açıklama bu JSON'da).
+  **Değiştirilemez** (`is_mutable = false`), güncelleme yetkisi launch PDA'sında (hiçbir cüzdanda değil), telif payı
+  0. Mint yetkisi metadata yazıldıktan sonra kaldırılır.
+- Benzer görünen harfler (ör. Kiril `а` / Latin `a`) ve
   dile özgü harf dönüşümleri (Türkçe `İ`/`i`) ayrı ad sayılır.
 
 **Kod yapısı ve araç zinciri**
 - `programs/herdcall-core`: saf Rust, tam sayı ve taşma kontrollü aritmetik. Programdaki tüm hesaplar buradan gelir.
 - `programs/herdcall`: Anchor 1.2 programı; hesap yapıları, talimatlar (Meteora DAMM v2 çağrıları sıradaki iş).
 - `programs/herdcall-tests`: derlenmiş programı LiteSVM'de çalıştıran uçtan uca testler (`npm run test:program`).
+  Metaplex ve Meteora DAMM v2 programlarının gerçek ikili dosyalarını yükler; `programs/fixtures/fetch.sh` bunları
+  mainnet'ten indirir ve sha256 ile doğrular.
 - Programı derlemek ve yerel olarak test etmek için Solana CLI, `cargo build-sbf` ve Anchor gerekir; LiteSVM 0.18
   Rust 1.97.1 veya üstünü ister. Bulut ortamında bunların indirilmesi için ağ ayarlarında `release.anza.xyz` ve
   `github.com` alan adlarına izin verilmeli.
@@ -489,7 +495,8 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
      curve'de süre sınırı yok; minimum Lobby 1 SOL; teminat 0,25 SOL, yalnızca Lobby boyunca kilitli; kapatma
      simülasyonu. Uçtan uca testler.
    - ⏳ Meteora DAMM v2 havuzunun açılması ve LP'nin kalıcı kilidi (breakout şimdilik fonları ayırıp `Migrating`
-     aşamasında bekler), Metaplex token metadata'sı, devnet kurulumu ve devnet'te aynı testler.
+     aşamasında bekler), devnet kurulumu ve devnet'te aynı testler.
+   - ✅ **Metaplex token metadata** (§12): değiştirilemez ad, sembol, URI; testler gerçek Metaplex programıyla.
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
    açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda. İsteğe bağlı **Creator Bounty** (§4).
 3. **Şeffaflık ve keşif deneyimi:** Gerçek token verileri, işlem geçmişi, creator geçmişi, token yetkileri ve

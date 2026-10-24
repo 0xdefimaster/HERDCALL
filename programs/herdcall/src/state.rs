@@ -17,6 +17,8 @@ pub const NAME_SEED: &[u8] = b"name";
 pub const TICKER_SEED: &[u8] = b"ticker";
 
 pub const TOKEN_DECIMALS: u8 = 6;
+/// Metaplex limit for the metadata URI (JSON with the image and description).
+pub const MAX_URI_LEN: usize = 200;
 pub const MAX_LOBBY_SECS: i64 = 3_600;
 
 /// Parameters every new launch copies. Changing them never affects an existing launch.
@@ -98,7 +100,8 @@ pub struct Launch {
     pub params: LaunchParams,
     #[max_len(10)]
     pub ticker: String,
-    /// As given by the creator; uniqueness is checked on its canonical form (`herdcall_core::names::canonical_name`).
+    /// As given by the creator, without leading and trailing whitespace; uniqueness is checked on its canonical form
+    /// (`herdcall_core::names::canonical_name`).
     #[max_len(32)]
     pub name: String,
     pub close_at: i64,

@@ -48,6 +48,8 @@ pub enum HerdError {
     InvalidName,
     #[msg("Name hash does not match the name")]
     NameHashMismatch,
+    #[msg("Metadata URI is longer than 200 bytes")]
+    InvalidUri,
     #[msg("Name and ticker are held until the launch is cancelled or breaks out")]
     NameNotReleasable,
 }

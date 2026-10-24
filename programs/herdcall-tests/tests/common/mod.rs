@@ -65,9 +65,15 @@ pub struct LaunchKeys {
     pub creator_escrow: Pubkey,
     pub ticker_record: Pubkey,
     pub name_record: Pubkey,
+    pub metadata: Pubkey,
     pub ticker: String,
     pub name: String,
     pub creator: Keypair,
+}
+
+pub fn metadata_pda(mint: &Pubkey) -> Pubkey {
+    let id = anchor_spl::metadata::ID;
+    Pubkey::find_program_address(&[b"metadata", id.as_ref(), mint.as_ref()], &id).0
 }
 
 pub fn ticker_pda(ticker: &str) -> Pubkey {
@@ -89,6 +95,9 @@ impl Env {
         let so = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../target/deploy/herdcall.so"))
             .expect("build the program first: cargo build-sbf --manifest-path programs/herdcall/Cargo.toml");
         svm.add_program(addr(&herdcall::ID), &so).unwrap();
+        let mpl = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/mpl_token_metadata.so"))
+            .expect("fetch the Metaplex program first: programs/fixtures/fetch.sh");
+        svm.add_program(addr(&anchor_spl::metadata::ID), &mpl).unwrap();
         let admin = Keypair::new();
         svm.airdrop(&admin.pubkey(), 1_000 * SOL).unwrap();
         let mut env = Self { svm, admin, now: 1_800_000_000, launches: 0 };
@@ -184,6 +193,29 @@ impl Env {
     }
 
     pub fn create_launch_full(&mut self, bonded: bool, lobby_secs: i64, ticker: &str, name: &str) -> Result<LaunchKeys, String> {
+        self.create_launch_uri(bonded, lobby_secs, ticker, name, "https://herdcall.fun/t/example.json")
+    }
+
+    pub fn create_launch_uri(&mut self, bonded: bool, lobby_secs: i64, ticker: &str, name: &str, uri: &str) -> Result<LaunchKeys, String> {
+        self.create_launch_tampered(bonded, lobby_secs, ticker, name, uri, |_| {})
+    }
+
+    /// A fresh-ticker launch whose account list is changed by `tamper` before sending.
+    pub fn create_launch_with(&mut self, tamper: impl FnOnce(&mut LaunchKeys)) -> Result<LaunchKeys, String> {
+        self.launches += 1;
+        let ticker = format!("T{}", self.launches);
+        self.create_launch_tampered(true, 60, &ticker, &format!("{ticker} Coin"), "", tamper)
+    }
+
+    fn create_launch_tampered(
+        &mut self,
+        bonded: bool,
+        lobby_secs: i64,
+        ticker: &str,
+        name: &str,
+        uri: &str,
+        tamper: impl FnOnce(&mut LaunchKeys),
+    ) -> Result<LaunchKeys, String> {
         let creator = self.user(10);
         let mint_kp = Keypair::new();
         let mint = pk(&mint_kp.pubkey());
@@ -197,10 +229,13 @@ impl Env {
             creator_escrow: pda(&[CREATOR_ESCROW_SEED, launch.as_ref()]),
             ticker_record: ticker_pda(ticker),
             name_record: name_pda(name),
+            metadata: metadata_pda(&mint),
             ticker: ticker.to_string(),
             name: name.to_string(),
             creator,
         };
+        let mut keys = keys;
+        tamper(&mut keys);
         let metas = herdcall::accounts::CreateLaunch {
             creator: pk(&keys.creator.pubkey()),
             config: pda(&[CONFIG_SEED]),
@@ -212,9 +247,12 @@ impl Env {
             creator_escrow: keys.creator_escrow,
             ticker_record: keys.ticker_record,
             name_record: keys.name_record,
+            metadata: keys.metadata,
+            token_metadata_program: anchor_spl::metadata::ID,
             token_program: anchor_spl::token::ID,
             associated_token_program: anchor_spl::associated_token::ID,
             system_program: anchor_lang::system_program::ID,
+            rent: anchor_lang::solana_program::rent::ID,
         }
         .to_account_metas(None);
         let ix = self.ix(metas, herdcall::instruction::CreateLaunch {
@@ -223,6 +261,7 @@ impl Env {
                 ticker: ticker.to_string(),
                 name: name.to_string(),
                 name_hash: name_hash(name),
+                uri: uri.to_string(),
             }
             .data());
         let creator = keys.creator.insecure_clone();
@@ -395,5 +434,14 @@ impl Env {
             return None;
         }
         Some(NameRecord::try_deserialize(&mut d.as_slice()).expect("name record"))
+    }
+
+    /// The mint's Metaplex metadata, if it exists.
+    pub fn metadata(&self, k: &LaunchKeys) -> Option<anchor_spl::metadata::MetadataAccount> {
+        let d = self.data(&k.metadata);
+        if d.is_empty() {
+            return None;
+        }
+        Some(anchor_lang::AccountDeserialize::try_deserialize(&mut d.as_slice()).expect("metadata"))
     }
 }
