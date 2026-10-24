@@ -50,6 +50,8 @@ pub enum HerdError {
     NameHashMismatch,
     #[msg("Metadata URI is longer than 200 bytes")]
     InvalidUri,
+    #[msg("DAMM v2 config is not usable for a HerdCall pool")]
+    InvalidDexConfig,
     #[msg("Name and ticker are held until the launch is cancelled or breaks out")]
     NameNotReleasable,
 }

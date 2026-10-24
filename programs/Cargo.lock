@@ -1548,6 +1548,7 @@ dependencies = [
 name = "herdcall-core"
 version = "0.1.0"
 dependencies = [
+ "ruint",
  "serde_json",
 ]
 
@@ -1560,6 +1561,8 @@ dependencies = [
  "herdcall",
  "herdcall-core",
  "litesvm",
+ "sha2 0.10.9",
+ "solana-account",
  "solana-address 2.7.0",
  "solana-clock 3.2.1",
  "solana-instruction 3.5.1",
@@ -2325,6 +2328,21 @@ dependencies = [
  "hmac",
  "subtle",
 ]
+
+[[package]]
+name = "ruint"
+version = "1.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0de3fa9b4dac39cc2bd65679bacf9f531899d933605e2963b40c2129cdb55f2"
+dependencies = [
+ "ruint-macro",
+]
+
+[[package]]
+name = "ruint-macro"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
 
 [[package]]
 name = "rustc-demangle"

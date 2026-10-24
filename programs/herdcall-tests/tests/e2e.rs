@@ -5,6 +5,7 @@ mod common;
 use common::*;
 use herdcall::state::*;
 use herdcall_core::curve::{Market, Phase as CorePhase};
+use herdcall_core::dex;
 use herdcall_core::fees::{split_fee, FeeParts, Kind};
 use herdcall_core::stampede::{claim_tokens, settle as core_settle};
 use herdcall_core::BPS;
@@ -56,7 +57,7 @@ fn assert_curve(l: &Launch, m: &Market, ctx: &str) {
     let want = match m.phase {
         CorePhase::Curve => Phase::Curve,
         CorePhase::BreakingOut => Phase::BreakingOut,
-        CorePhase::Migrated => Phase::Migrating,
+        CorePhase::Migrated => Phase::Migrated,
     };
     assert_eq!(l.phase, want, "{ctx}: phase");
 }
@@ -185,20 +186,49 @@ fn full_lifecycle_matches_core() {
     expect_err(env.sell(&k, &trader, TOKEN, 0, None), "TradingClosed");
     expect_err(env.buy_exact_in(&k, &trader, SOL, 1, None), "TradingClosed");
 
-    // Breakout.
+    // Breakout: the Meteora DAMM v2 pool opens at the curve's final price and the position is locked for good.
     let keeper_before = env.lamports(&pk(&keeper.pubkey()));
     let vault_before = env.lamports(&k.sol_vault);
+    let protocol_before = env.lamports(&pda(&[PROTOCOL_SEED]));
     let mig = m.breakout().unwrap();
+    let sqrt_price = dex::sqrt_price_ceil(mig.final_spot.0, mig.final_spot.1).unwrap();
+    let dep = dex::fit(mig.lp_tokens as u64, mig.lp_native as u64, dex::MIN_SQRT_PRICE, sqrt_price, dex::MAX_SQRT_PRICE).unwrap();
     env.breakout(&k, &keeper).unwrap();
     let l = env.launch(&k);
-    assert_eq!(l.phase, Phase::Migrating);
-    assert_eq!((l.lp_native as u128, l.lp_tokens as u128, l.burned as u128), (mig.lp_native, mig.lp_tokens, mig.burned));
-    assert_eq!((env.lamports(&pk(&keeper.pubkey())) + TX_FEE - keeper_before) as u128, mig.keeper_fee, "keeper fee");
-    assert_eq!((vault_before - env.lamports(&k.sol_vault)) as u128, mig.keeper_fee);
-    assert!(env.lamports(&k.sol_vault) >= env.rent(&k.sol_vault) + l.lp_native, "LP SOL is in the vault");
+    let d = dex_keys(&k);
+    assert_eq!(l.phase, Phase::Migrated);
+    assert_eq!((l.lp_native, l.lp_tokens, l.lp_liquidity), (dep.b, dep.a, dep.liquidity));
+    assert_eq!(l.burned as u128, mig.burned + (mig.lp_tokens - dep.a as u128));
+    assert_eq!((l.dex_pool, l.dex_position), (d.pool, d.position));
+    // Everything set aside left the vault: the LP SOL and the migration fee.
+    assert_eq!((vault_before - env.lamports(&k.sol_vault)) as u128, mig.lp_native + mig.keeper_fee);
+    assert!(env.lamports(&k.sol_vault) >= env.rent(&k.sol_vault));
+    // The pool holds exactly what the core says, at the curve's final price.
+    assert_eq!(env.token_balance(&d.token_vault), dep.a);
+    assert_eq!(env.token_balance(&d.wsol_vault), dep.b);
+    let pool = env.data(&d.pool);
+    assert_eq!(&pool[168..200], k.mint.as_ref(), "token A is the launch token");
+    assert_eq!(u128_at(&pool, 360), dep.liquidity, "pool liquidity");
+    assert_eq!(u128_at(&pool, 456), sqrt_price, "pool price = curve's final price");
+    // The whole position is locked for good and its NFT stays with the launch PDA.
+    let position = env.data(&d.position);
+    assert_eq!((u128_at(&position, 152), u128_at(&position, 184)), (0, dep.liquidity), "unlocked, permanently locked");
+    let nft = env.data(&d.position_nft_account);
+    assert_eq!((&nft[32..64], env.token_balance(&d.position_nft_account)), (k.launch.as_ref(), 1));
+    // The SOL the pool could not take goes to the protocol; the migration fee pays the pool's rent, the keeper keeps
+    // the rest; the migrator and its temporary accounts are empty again.
+    assert_eq!((env.lamports(&pda(&[PROTOCOL_SEED])) - protocol_before) as u128, mig.lp_native - dep.b as u128);
+    let pool_rent = env.lamports(&d.pool) + env.lamports(&d.position) + env.lamports(&d.position_nft_mint)
+        + env.lamports(&d.position_nft_account) + env.lamports(&d.token_vault) + env.lamports(&d.wsol_vault) - dep.b;
+    assert!((pool_rent as u128) < mig.keeper_fee, "the migration fee covers the pool's rent ({pool_rent})");
+    assert_eq!(env.lamports(&pk(&keeper.pubkey())) + TX_FEE + pool_rent - keeper_before, mig.keeper_fee as u64, "keeper");
+    assert_eq!(env.lamports(&migrator()), 0);
+    for temp in [MIGRATOR_TOKEN_SEED, MIGRATOR_WSOL_SEED] {
+        assert!(env.data(&pda(&[temp, k.launch.as_ref()])).is_empty(), "temporary account closed");
+    }
     let unclaimed = claim_tokens(deposits[4] as u128, total as u128, s.x).unwrap();
     let dust = s.x - deposits.iter().map(|d| claim_tokens(*d as u128, total as u128, s.x).unwrap()).sum::<u128>();
-    assert_eq!(env.token_balance(&k.token_vault) as u128, mig.lp_tokens + unclaimed + dust, "vault after burn");
+    assert_eq!(env.token_balance(&k.token_vault) as u128, unclaimed + dust, "only unclaimed Lobby tokens stay");
     assert_eq!(env.mint_info(&k.mint), (false, p.total_supply - l.burned));
     expect_err(env.breakout(&k, &keeper), "NotBreakingOut");
     expect_err(env.buy_exact_in(&k, &trader, SOL, 1, None), "TradingClosed");
@@ -206,7 +236,7 @@ fn full_lifecycle_matches_core() {
     // A Lobby claim still works after the breakout and never touches the LP tokens.
     env.claim(&k, &users[4]).unwrap();
     assert_eq!(env.token_balance(&ata(&pk(&users[4].pubkey()), &k.mint)) as u128, unclaimed);
-    assert_eq!(env.token_balance(&k.token_vault) as u128, mig.lp_tokens + dust);
+    assert_eq!(env.token_balance(&k.token_vault) as u128, dust);
 
     // Fee withdrawals: only the owners, never below rent.
     let cf = env.lamports(&k.creator_fees) - env.rent(&k.creator_fees);

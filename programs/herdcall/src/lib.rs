@@ -10,12 +10,17 @@ use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::metadata::mpl_token_metadata::types::DataV2;
 use anchor_spl::metadata::{create_metadata_accounts_v3, CreateMetadataAccountsV3, Metadata};
 use anchor_spl::token::{self, spl_token::instruction::AuthorityType, Burn, Mint, MintTo, SetAuthority, Token, TokenAccount, Transfer};
+use anchor_spl::token::spl_token::native_mint;
+use anchor_spl::token::{CloseAccount, SyncNative};
+use anchor_spl::token_2022::Token2022;
 use herdcall_core::curve::Market;
+use herdcall_core::dex;
 use herdcall_core::fees::{split_fee, FeeParts};
 use herdcall_core::names::{is_canonical_ticker, releasable};
 use herdcall_core::stampede::{claim_tokens, settle as settle_lobby};
 use herdcall_core::BPS;
 
+pub mod damm;
 pub mod errors;
 pub mod state;
 
@@ -28,12 +33,14 @@ declare_id!("EPh2hoECkDTsSeHCriDwsF8DhVGhCjxwrbtC3qqyoJ8K");
 pub mod herdcall {
     use super::*;
 
-    /// One-time setup: default parameters for new launches and the protocol / Rekt-back vaults.
-    pub fn initialize(ctx: Context<Initialize>, params: LaunchParams) -> Result<()> {
+    /// One-time setup: default parameters for new launches, the DAMM v2 config for breakouts and the protocol /
+    /// Rekt-back vaults.
+    pub fn initialize(ctx: Context<Initialize>, params: LaunchParams, dex_config: Pubkey) -> Result<()> {
         validate_params(&params)?;
         let c = &mut ctx.accounts.config;
         c.admin = ctx.accounts.admin.key();
         c.params = params;
+        c.dex_config = dex_config;
         c.bump = ctx.bumps.config;
         ctx.accounts.protocol.bump = ctx.bumps.protocol;
         ctx.accounts.rekt_back.bump = ctx.bumps.rekt_back;
@@ -294,34 +301,153 @@ pub mod herdcall {
         Ok(())
     }
 
-    /// Permissionless, once. Pays the keeper, burns the LP tokens the pool does not need and sets the rest aside for
-    /// the Meteora DAMM v2 pool at the curve's final price (CURVE_SPEC §5.4).
+    /// Points future breakouts to another DAMM v2 config (for instance if Meteora retires one). It must still pass the
+    /// checks in `damm::read_config` at breakout, so the admin cannot pick a public config or a fee above 2%.
+    pub fn set_dex_config(ctx: Context<AdminOnly>, dex_config: Pubkey) -> Result<()> {
+        ctx.accounts.config.dex_config = dex_config;
+        Ok(())
+    }
+
+    /// Permissionless, once. Opens the Meteora DAMM v2 pool at the curve's final price with the reserve and the LP
+    /// tokens, locks the whole position for good (it keeps earning fees; its NFT stays with the launch PDA) and burns
+    /// the LP tokens the pool does not need (CURVE_SPEC §5.4). The migration fee pays the pool's rent; what is left of it
+    /// goes to the keeper.
     pub fn breakout(ctx: Context<Breakout>) -> Result<()> {
         require!(ctx.accounts.launch.phase == Phase::BreakingOut, HerdError::NotBreakingOut);
+        let migrator_key = ctx.accounts.migrator.key();
+        let cfg = damm::read_config(&ctx.accounts.dex_config.to_account_info(), &migrator_key)?;
         let (mut m, _, _) = market(&ctx.accounts.launch)?;
         let mig = m.breakout().map_err(core_err)?;
-        pay_from_vault(&ctx.accounts.sol_vault.to_account_info(), &ctx.accounts.keeper.to_account_info(), to_u64(mig.keeper_fee)?)?;
-        let l = &ctx.accounts.launch;
-        let mint_key = l.mint;
-        let bump = [l.bump];
-        let seeds: &[&[u8]] = &[LAUNCH_SEED, mint_key.as_ref(), &bump];
+        let (v, t) = mig.final_spot;
+        let sqrt_price = dex::sqrt_price_ceil(v, t).map_err(core_err)?;
+        let (lp_tokens, lp_native, keeper_fee) = (to_u64(mig.lp_tokens)?, to_u64(mig.lp_native)?, to_u64(mig.keeper_fee)?);
+        let dep = dex::fit(lp_tokens, lp_native, cfg.sqrt_min_price, sqrt_price, cfg.sqrt_max_price).map_err(core_err)?;
+
+        let a = &ctx.accounts;
+        let launch_key = a.launch.key();
+        let mint_key = a.launch.mint;
+        let launch_bump = [a.launch.bump];
+        let launch_seeds: &[&[u8]] = &[LAUNCH_SEED, mint_key.as_ref(), &launch_bump];
+        let migrator_bump = [ctx.bumps.migrator];
+        let migrator_seeds: &[&[u8]] = &[MIGRATOR_SEED, &migrator_bump];
+        let nft_bump = [ctx.bumps.position_nft_mint];
+        let nft_seeds: &[&[u8]] = &[POSITION_NFT_SEED, launch_key.as_ref(), &nft_bump];
+        let token_program = a.token_program.key();
+        let launch_info = a.launch.to_account_info();
+        let migrator = a.migrator.to_account_info();
+        let sol_vault = a.sol_vault.to_account_info();
+
+        // LP tokens the pool does not need.
         if mig.burned > 0 {
             token::burn(
                 CpiContext::new_with_signer(
-                    ctx.accounts.token_program.key(),
-                    Burn { mint: ctx.accounts.mint.to_account_info(), from: ctx.accounts.token_vault.to_account_info(), authority: l.to_account_info() },
-                    &[seeds],
+                    token_program,
+                    Burn { mint: a.mint.to_account_info(), from: a.token_vault.to_account_info(), authority: launch_info.clone() },
+                    &[launch_seeds],
                 ),
                 to_u64(mig.burned)?,
             )?;
         }
+        // The migrator holds the LP tokens and wrapped SOL, and the migration fee to pay the pool's rent.
+        token::transfer(
+            CpiContext::new_with_signer(
+                token_program,
+                Transfer { from: a.token_vault.to_account_info(), to: a.migrator_token.to_account_info(), authority: launch_info.clone() },
+                &[launch_seeds],
+            ),
+            lp_tokens,
+        )?;
+        // A CPI must see both sides of a direct lamport move: the zero transfer back records the vault's debit and the
+        // migrator's credit together; the migrator then wraps the LP SOL itself.
+        let system = a.system_program.key();
+        pay_from_vault(&sol_vault, &migrator, lp_native.checked_add(keeper_fee).ok_or(HerdError::MathOverflow)?)?;
+        transfer_signed(system, &migrator, &sol_vault, 0, migrator_seeds)?;
+        transfer_signed(system, &migrator, &a.migrator_wsol.to_account_info(), lp_native, migrator_seeds)?;
+        token::sync_native(CpiContext::new(token_program, SyncNative { account: a.migrator_wsol.to_account_info() }))?;
+
+        // Pool at the curve's final price; the launch PDA owns the position NFT.
+        damm::initialize_pool(
+            &damm::InitializePool {
+                creator: &launch_info,
+                position_nft_mint: &a.position_nft_mint.to_account_info(),
+                position_nft_account: &a.position_nft_account.to_account_info(),
+                payer: &migrator,
+                config: &a.dex_config.to_account_info(),
+                pool_authority: &a.pool_authority.to_account_info(),
+                pool: &a.pool.to_account_info(),
+                position: &a.position.to_account_info(),
+                token_a_mint: &a.mint.to_account_info(),
+                token_b_mint: &a.native_mint.to_account_info(),
+                token_a_vault: &a.pool_token_vault.to_account_info(),
+                token_b_vault: &a.pool_wsol_vault.to_account_info(),
+                payer_token_a: &a.migrator_token.to_account_info(),
+                payer_token_b: &a.migrator_wsol.to_account_info(),
+                token_program: &a.token_program.to_account_info(),
+                token_2022_program: &a.token_2022_program.to_account_info(),
+                system_program: &a.system_program.to_account_info(),
+                event_authority: &a.dex_event_authority.to_account_info(),
+                program: &a.dex_program.to_account_info(),
+            },
+            dep.liquidity,
+            dep.sqrt_price,
+            &[migrator_seeds, nft_seeds],
+        )?;
+        damm::permanent_lock_position(
+            &a.pool.to_account_info(),
+            &a.position.to_account_info(),
+            &a.position_nft_account.to_account_info(),
+            &launch_info,
+            &a.dex_event_authority.to_account_info(),
+            &a.dex_program.to_account_info(),
+            dep.liquidity,
+            &[launch_seeds],
+        )?;
+
+        // Leftovers: tokens the pool did not take are burned; the few lamports of SOL go to the protocol; the rest of
+        // the migration fee and the temporary accounts' rent go to the keeper. The migrator ends empty.
+        let left_tokens = lp_tokens - dep.a;
+        if left_tokens > 0 {
+            token::burn(
+                CpiContext::new_with_signer(
+                    token_program,
+                    Burn { mint: a.mint.to_account_info(), from: a.migrator_token.to_account_info(), authority: migrator.clone() },
+                    &[migrator_seeds],
+                ),
+                left_tokens,
+            )?;
+        }
+        token::close_account(CpiContext::new_with_signer(
+            token_program,
+            CloseAccount { account: a.migrator_token.to_account_info(), destination: a.keeper.to_account_info(), authority: migrator.clone() },
+            &[migrator_seeds],
+        ))?;
+        token::close_account(CpiContext::new_with_signer(
+            token_program,
+            CloseAccount { account: a.migrator_wsol.to_account_info(), destination: migrator.clone(), authority: migrator.clone() },
+            &[migrator_seeds],
+        ))?;
+        let left_sol = lp_native - dep.b;
+        if left_sol > 0 {
+            transfer_signed(system, &migrator, &a.protocol.to_account_info(), left_sol, migrator_seeds)?;
+        }
+        let rest = migrator.lamports();
+        if rest > 0 {
+            transfer_signed(system, &migrator, &a.keeper.to_account_info(), rest, migrator_seeds)?;
+        }
+
+        let pool = a.pool.key();
+        let position = a.position.key();
+        let keeper = a.keeper.key();
         let l = &mut ctx.accounts.launch;
-        l.lp_native = to_u64(mig.lp_native)?;
-        l.lp_tokens = to_u64(mig.lp_tokens)?;
-        l.burned = to_u64(mig.burned)?;
+        l.lp_native = dep.b;
+        l.lp_tokens = dep.a;
+        l.lp_liquidity = dep.liquidity;
+        l.burned = to_u64(mig.burned)?.checked_add(left_tokens).ok_or(HerdError::MathOverflow)?;
+        l.dex_pool = pool;
+        l.dex_position = position;
         l.store_curve(&m.curve)?;
-        l.phase = Phase::Migrating;
-        emit!(BrokeOut { launch: l.key(), keeper: ctx.accounts.keeper.key(), lp_native: l.lp_native, lp_tokens: l.lp_tokens, burned: l.burned });
+        l.phase = Phase::Migrated;
+        emit!(BrokeOut { launch: l.key(), keeper, pool, lp_native: l.lp_native, lp_tokens: l.lp_tokens, burned: l.burned });
         Ok(())
     }
 
@@ -470,6 +596,14 @@ fn pay_from_wallet<'info>(from: &AccountInfo<'info>, to: &AccountInfo<'info>, sy
         return Ok(());
     }
     system_program::transfer(CpiContext::new(system.key(), system_program::Transfer { from: from.clone(), to: to.clone() }), amount)
+}
+
+/// System transfer from a system-owned PDA that signs with `seeds`.
+fn transfer_signed<'info>(system: Pubkey, from: &AccountInfo<'info>, to: &AccountInfo<'info>, amount: u64, seeds: &[&[u8]]) -> Result<()> {
+    system_program::transfer(
+        CpiContext::new_with_signer(system, system_program::Transfer { from: from.clone(), to: to.clone() }, &[seeds]),
+        amount,
+    )
 }
 
 fn withdrawable(acc: &AccountInfo) -> Result<u64> {
@@ -627,18 +761,69 @@ pub struct Trade<'info> {
 }
 
 #[derive(Accounts)]
+pub struct AdminOnly<'info> {
+    pub admin: Signer<'info>,
+    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump, has_one = admin)]
+    pub config: Account<'info, Config>,
+}
+
+#[derive(Accounts)]
 pub struct Breakout<'info> {
     #[account(mut)]
     pub keeper: Signer<'info>,
     #[account(mut, seeds = [LAUNCH_SEED, launch.mint.as_ref()], bump = launch.bump)]
-    pub launch: Account<'info, Launch>,
+    pub launch: Box<Account<'info, Launch>>,
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
     #[account(mut, address = launch.mint)]
-    pub mint: Account<'info, Mint>,
+    pub mint: Box<Account<'info, Mint>>,
     #[account(mut, associated_token::mint = mint, associated_token::authority = launch)]
-    pub token_vault: Account<'info, TokenAccount>,
+    pub token_vault: Box<Account<'info, TokenAccount>>,
     #[account(mut, seeds = [SOL_VAULT_SEED, launch.key().as_ref()], bump = launch.sol_vault_bump)]
-    pub sol_vault: Account<'info, Vault>,
+    pub sol_vault: Box<Account<'info, Vault>>,
+    #[account(mut, seeds = [PROTOCOL_SEED], bump = protocol.bump)]
+    pub protocol: Box<Account<'info, Vault>>,
+    /// CHECK: owner, layout and pool creator checked by `damm::read_config`.
+    #[account(address = config.dex_config @ HerdError::InvalidDexConfig)]
+    pub dex_config: UncheckedAccount<'info>,
+    /// CHECK: system-owned PDA without data; it signs as the pool's payer.
+    #[account(mut, seeds = [MIGRATOR_SEED], bump)]
+    pub migrator: UncheckedAccount<'info>,
+    #[account(init, payer = keeper, seeds = [MIGRATOR_TOKEN_SEED, launch.key().as_ref()], bump, token::mint = mint, token::authority = migrator)]
+    pub migrator_token: Box<Account<'info, TokenAccount>>,
+    #[account(init, payer = keeper, seeds = [MIGRATOR_WSOL_SEED, launch.key().as_ref()], bump, token::mint = native_mint, token::authority = migrator)]
+    pub migrator_wsol: Box<Account<'info, TokenAccount>>,
+    #[account(address = native_mint::ID)]
+    pub native_mint: Box<Account<'info, Mint>>,
+    /// CHECK: the position NFT mint DAMM creates; this PDA signs for it.
+    #[account(mut, seeds = [POSITION_NFT_SEED, launch.key().as_ref()], bump)]
+    pub position_nft_mint: UncheckedAccount<'info>,
+    /// CHECK: created and checked by DAMM (seeds from the NFT mint).
+    #[account(mut)]
+    pub position_nft_account: UncheckedAccount<'info>,
+    /// CHECK: created and checked by DAMM (seeds from config and mints).
+    #[account(mut)]
+    pub pool: UncheckedAccount<'info>,
+    /// CHECK: created and checked by DAMM.
+    #[account(mut)]
+    pub position: UncheckedAccount<'info>,
+    /// CHECK: created and checked by DAMM.
+    #[account(mut)]
+    pub pool_token_vault: UncheckedAccount<'info>,
+    /// CHECK: created and checked by DAMM.
+    #[account(mut)]
+    pub pool_wsol_vault: UncheckedAccount<'info>,
+    /// CHECK: DAMM's pool authority.
+    #[account(address = damm::POOL_AUTHORITY)]
+    pub pool_authority: UncheckedAccount<'info>,
+    /// CHECK: checked by DAMM (event CPI).
+    pub dex_event_authority: UncheckedAccount<'info>,
+    /// CHECK: the real DAMM v2 program; nothing else may receive the reserve.
+    #[account(address = damm::PROGRAM_ID, executable)]
+    pub dex_program: UncheckedAccount<'info>,
     pub token_program: Program<'info, Token>,
+    pub token_2022_program: Program<'info, Token2022>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -735,6 +920,7 @@ pub struct Traded {
 pub struct BrokeOut {
     pub launch: Pubkey,
     pub keeper: Pubkey,
+    pub pool: Pubkey,
     pub lp_native: u64,
     pub lp_tokens: u64,
     pub burned: u64,

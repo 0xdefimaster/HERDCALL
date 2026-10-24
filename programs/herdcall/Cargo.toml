@@ -13,6 +13,8 @@ name = "herdcall"
 [features]
 default = []
 no-entrypoint = []
+# Accepts public DAMM v2 configs at breakout (anyone could pre-create the pool): devnet and tests only.
+devnet = []
 cpi = ["no-entrypoint"]
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 

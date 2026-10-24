@@ -15,6 +15,12 @@ pub const DEPOSIT_SEED: &[u8] = b"deposit";
 pub const INTERFACE_SEED: &[u8] = b"interface";
 pub const NAME_SEED: &[u8] = b"name";
 pub const TICKER_SEED: &[u8] = b"ticker";
+/// System-owned PDA, the only pool creator allowed by the HerdCall DAMM v2 config. It pays the pool's rent and holds the
+/// LP tokens and SOL for the length of a breakout; it is empty before and after.
+pub const MIGRATOR_SEED: &[u8] = b"migrator";
+pub const MIGRATOR_TOKEN_SEED: &[u8] = b"migrator_token";
+pub const MIGRATOR_WSOL_SEED: &[u8] = b"migrator_wsol";
+pub const POSITION_NFT_SEED: &[u8] = b"position_nft";
 
 pub const TOKEN_DECIMALS: u8 = 6;
 /// Metaplex limit for the metadata URI (JSON with the image and description).
@@ -27,6 +33,8 @@ pub const MAX_LOBBY_SECS: i64 = 3_600;
 pub struct Config {
     pub admin: Pubkey,
     pub params: LaunchParams,
+    /// Meteora DAMM v2 config breakouts create their pool with (checked at breakout, see `damm::read_config`).
+    pub dex_config: Pubkey,
     pub bump: u8,
 }
 
@@ -83,9 +91,7 @@ pub enum Phase {
     Lobby,
     Curve,
     BreakingOut,
-    /// Breakout done: the keeper is paid, extra LP tokens are burned, `lp_native` and `lp_tokens` are set aside for
-    /// the Meteora DAMM v2 pool. The pool creation is the next step of the program (CURVE_SPEC §5.4).
-    Migrating,
+    /// Broke out: the Meteora DAMM v2 pool holds the liquidity, locked for good (CURVE_SPEC §5.4).
     Migrated,
     Cancelled,
 }
@@ -122,9 +128,14 @@ pub struct Launch {
     /// Creator lock ratio ("hold to earn"); 10_000 until the Bonded Creator vault is wired in.
     pub lock_ratio_bps: u16,
     // Breakout
+    /// SOL and tokens in the pool, and its locked liquidity.
     pub lp_native: u64,
     pub lp_tokens: u64,
+    pub lp_liquidity: u128,
+    /// LP tokens the pool did not need, burned.
     pub burned: u64,
+    pub dex_pool: Pubkey,
+    pub dex_position: Pubkey,
     pub bump: u8,
     pub sol_vault_bump: u8,
     pub creator_fees_bump: u8,
@@ -146,7 +157,7 @@ impl Launch {
             Phase::Lobby => LaunchStatus::Lobby,
             Phase::Cancelled => LaunchStatus::Cancelled,
             Phase::Curve => LaunchStatus::Curve,
-            Phase::BreakingOut | Phase::Migrating | Phase::Migrated => LaunchStatus::BrokeOut,
+            Phase::BreakingOut | Phase::Migrated => LaunchStatus::BrokeOut,
         }
     }
 
@@ -167,7 +178,7 @@ impl Launch {
         self.phase = match p {
             CorePhase::Curve => Phase::Curve,
             CorePhase::BreakingOut => Phase::BreakingOut,
-            CorePhase::Migrated => Phase::Migrating,
+            CorePhase::Migrated => Phase::Migrated,
         };
     }
 }

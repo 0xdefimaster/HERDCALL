@@ -446,7 +446,7 @@ bağlanır; Lobby iptal olursa serbest kalır. Curve'de süre sınırı yok.
 
 **Kod yapısı ve araç zinciri**
 - `programs/herdcall-core`: saf Rust, tam sayı ve taşma kontrollü aritmetik. Programdaki tüm hesaplar buradan gelir.
-- `programs/herdcall`: Anchor 1.2 programı; hesap yapıları, talimatlar (Meteora DAMM v2 çağrıları sıradaki iş).
+- `programs/herdcall`: Anchor 1.2 programı; hesap yapıları, talimatlar, Metaplex ve Meteora DAMM v2 çağrıları.
 - `programs/herdcall-tests`: derlenmiş programı LiteSVM'de çalıştıran uçtan uca testler (`npm run test:program`).
   Metaplex ve Meteora DAMM v2 programlarının gerçek ikili dosyalarını yükler; `programs/fixtures/fetch.sh` bunları
   mainnet'ten indirir ve sha256 ile doğrular.
@@ -494,8 +494,11 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
    - ✅ **Ad ve ticker rezervasyonu** (§12): ikisi de benzersiz; curve açılınca kalıcı, Lobby iptalinde serbest;
      curve'de süre sınırı yok; minimum Lobby 1 SOL; teminat 0,25 SOL, yalnızca Lobby boyunca kilitli; kapatma
      simülasyonu. Uçtan uca testler.
-   - ⏳ Meteora DAMM v2 havuzunun açılması ve LP'nin kalıcı kilidi (breakout şimdilik fonları ayırıp `Migrating`
-     aşamasında bekler), devnet kurulumu ve devnet'te aynı testler.
+   - ✅ **Meteora DAMM v2 breakout** (CURVE_SPEC §5.4): havuz curve'ün son fiyatından açılır, pozisyonun tamamı kalıcı
+     kilitlenir, NFT launch PDA'sında kalır. Testler mainnet'ten alınmış gerçek DAMM v2 programıyla: havuzda gerçek
+     swap, havuzu önceden açma saldırısı, yanlış config ve sahte hesaplar. Bilerek eklenen 6 hatanın 6'sı yakalanır.
+   - ⏳ Meteora'dan HerdCall migrator PDA'sı için **özel config** (mainnet şartı), kilitli pozisyonun ücretlerinin
+     toplanıp dağıtılması (CURVE_SPEC §5.7), devnet kurulumu ve devnet'te aynı akış.
    - ✅ **Metaplex token metadata** (§12): değiştirilemez ad, sembol, URI; testler gerçek Metaplex programıyla.
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
    açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda. İsteğe bağlı **Creator Bounty** (§4).
@@ -523,6 +526,8 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
 - **Limit fiyat (v2 adayı):** "En fazla şu mcap'e kadar alırım" emri (STAMPEDE_SPEC §11).
 - Curve: kilitli Meteora pozisyonunun ücret dağıtımı (%25 likiditeye önerisi, kalanı?), geçiş ücreti, breakout'a ulaşmayan tokendeki Stampede fazlalığı, program yükseltme yetkisi (CURVE_SPEC §10). ✅ Karar verilen: $T_0$ = 1 milyar, Meteora DAMM v2, LP kalıcı kilit.
 - Create fee miktarı
+- Meteora DAMM v2: HerdCall migrator PDA'sı için özel (partner) config; havuz ücreti oranı (test config'i %1) ve
+  Meteora'nın bu ücretten aldığı protokol payı (herkese açık config'lerde %20).
 - Breakout'a ulaşmayan token için süreli kapanış istenirse ayrı bir terminal durum (holder'ların çıkış yolu
   tanımlı) gerekir; şimdilik yok. ✅ Karar verilen: minimum Lobby 1 SOL, ad/ticker teminatı 0,25 SOL (ikisi de parametre).
 - Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$

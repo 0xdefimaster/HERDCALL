@@ -5,6 +5,7 @@
 #![forbid(unsafe_code)]
 
 pub mod curve;
+pub mod dex;
 pub mod fees;
 pub mod names;
 pub mod stampede;

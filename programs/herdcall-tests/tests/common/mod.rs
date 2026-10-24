@@ -41,6 +41,52 @@ pub fn example_params() -> LaunchParams {
     }
 }
 
+pub const DAMM: Pubkey = herdcall::damm::PROGRAM_ID;
+/// Address of the mainnet config the fixture was taken from; the tests install it as a private config.
+pub const DEX_CONFIG: Pubkey = Pubkey::from_str_const("AeLtDKgw3XnXbr3Kgfbcb7KiZULVCQ5mXaFDiG9n7EgW");
+pub const WSOL: Pubkey = anchor_spl::token::spl_token::native_mint::ID;
+
+pub fn damm_pda(seeds: &[&[u8]]) -> Pubkey {
+    Pubkey::find_program_address(seeds, &DAMM).0
+}
+
+pub fn migrator() -> Pubkey {
+    pda(&[MIGRATOR_SEED])
+}
+
+/// DAMM's canonical pool for a config and a pair: `["pool", config, larger mint, smaller mint]`.
+pub fn dex_pool(config: &Pubkey, mint: &Pubkey) -> Pubkey {
+    let (hi, lo) = if mint > &WSOL { (mint, &WSOL) } else { (&WSOL, mint) };
+    damm_pda(&[b"pool", config.as_ref(), hi.as_ref(), lo.as_ref()])
+}
+
+/// Accounts of a launch's breakout pool.
+pub struct DexKeys {
+    pub pool: Pubkey,
+    pub position: Pubkey,
+    pub position_nft_mint: Pubkey,
+    pub position_nft_account: Pubkey,
+    pub token_vault: Pubkey,
+    pub wsol_vault: Pubkey,
+}
+
+pub fn dex_keys(k: &LaunchKeys) -> DexKeys {
+    let nft = pda(&[POSITION_NFT_SEED, k.launch.as_ref()]);
+    let pool = dex_pool(&DEX_CONFIG, &k.mint);
+    DexKeys {
+        pool,
+        position: damm_pda(&[b"position", nft.as_ref()]),
+        position_nft_mint: nft,
+        position_nft_account: damm_pda(&[b"position_nft_account", nft.as_ref()]),
+        token_vault: damm_pda(&[b"token_vault", k.mint.as_ref(), pool.as_ref()]),
+        wsol_vault: damm_pda(&[b"token_vault", WSOL.as_ref(), pool.as_ref()]),
+    }
+}
+
+pub fn u128_at(d: &[u8], at: usize) -> u128 {
+    u128::from_le_bytes(d[at..at + 16].try_into().unwrap())
+}
+
 pub fn pda(seeds: &[&[u8]]) -> Pubkey {
     Pubkey::find_program_address(seeds, &herdcall::ID).0
 }
@@ -98,10 +144,15 @@ impl Env {
         let mpl = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/mpl_token_metadata.so"))
             .expect("fetch the Metaplex program first: programs/fixtures/fetch.sh");
         svm.add_program(addr(&anchor_spl::metadata::ID), &mpl).unwrap();
+        let damm = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/damm_v2.so"))
+            .expect("fetch the DAMM v2 program first: programs/fixtures/fetch.sh");
+        svm.add_program(addr(&DAMM), &damm).unwrap();
         let admin = Keypair::new();
         svm.airdrop(&admin.pubkey(), 1_000 * SOL).unwrap();
         let mut env = Self { svm, admin, now: 1_800_000_000, launches: 0 };
         env.set_time(env.now);
+        env.install_dex_config(migrator());
+        env.install_native_mint();
         env
     }
 
@@ -113,6 +164,30 @@ impl Env {
         self.svm.expire_blockhash();
     }
 
+    /// Installs the fixture config at `DEX_CONFIG` with `creator` as its pool creator authority (the HerdCall migrator
+    /// makes it the private config mainnet needs; `Pubkey::default()` makes it public).
+    pub fn install_dex_config(&mut self, creator: Pubkey) {
+        let mut d = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/damm_config_1pct.bin")).expect("config fixture");
+        d[40..72].copy_from_slice(creator.as_ref());
+        self.set_dex_config_bytes(d);
+    }
+
+    /// The wrapped SOL mint exists on every cluster but not in a fresh LiteSVM: 9 decimals, initialized, no authorities.
+    fn install_native_mint(&mut self) {
+        let mut d = vec![0u8; 82];
+        d[44] = 9;
+        d[45] = 1;
+        let lamports = self.svm.minimum_balance_for_rent_exemption(d.len());
+        let acc = solana_account::Account { lamports, data: d, owner: addr(&anchor_spl::token::ID), executable: false, rent_epoch: 0 };
+        self.svm.set_account(addr(&WSOL), acc).unwrap();
+    }
+
+    pub fn set_dex_config_bytes(&mut self, d: Vec<u8>) {
+        let lamports = self.svm.minimum_balance_for_rent_exemption(d.len());
+        let acc = solana_account::Account { lamports, data: d, owner: addr(&DAMM), executable: false, rent_epoch: 0 };
+        self.svm.set_account(addr(&DEX_CONFIG), acc).unwrap();
+    }
+
     pub fn user(&mut self, sol: u64) -> Keypair {
         let k = Keypair::new();
         self.svm.airdrop(&k.pubkey(), sol * SOL).unwrap();
@@ -121,7 +196,11 @@ impl Env {
 
     pub fn send(&mut self, ix: Instruction, signers: &[&Keypair]) -> Result<(), String> {
         let payer = signers[0].pubkey();
-        let tx = Transaction::new_signed_with_payer(&[ix], Some(&payer), signers, self.svm.latest_blockhash());
+        // SetComputeUnitLimit(1_400_000): the breakout runs DAMM's pool creation.
+        let mut cu = vec![2u8];
+        cu.extend_from_slice(&1_400_000u32.to_le_bytes());
+        let budget = Instruction { program_id: Address::from_str_const("ComputeBudget111111111111111111111111111111"), accounts: vec![], data: cu };
+        let tx = Transaction::new_signed_with_payer(&[budget, ix], Some(&payer), signers, self.svm.latest_blockhash());
         let r = self.svm.send_transaction(tx).map(|_| ()).map_err(|e| format!("{:?}\n{}", e.err, e.meta.logs.join("\n")));
         self.svm.expire_blockhash();
         r
@@ -176,7 +255,7 @@ impl Env {
             system_program: anchor_lang::system_program::ID,
         }
         .to_account_metas(None);
-        let ix = self.ix(metas, herdcall::instruction::Initialize { params }.data());
+        let ix = self.ix(metas, herdcall::instruction::Initialize { params, dex_config: DEX_CONFIG }.data());
         self.send(ix, &[&admin])
     }
 
@@ -377,18 +456,44 @@ impl Env {
         self.send(ix, &[trader])
     }
 
-    pub fn breakout(&mut self, k: &LaunchKeys, keeper: &Keypair) -> Result<(), String> {
-        let metas = herdcall::accounts::Breakout {
-            keeper: pk(&keeper.pubkey()),
+    pub fn breakout_accounts(&self, k: &LaunchKeys, keeper: &Pubkey) -> herdcall::accounts::Breakout {
+        let d = dex_keys(k);
+        herdcall::accounts::Breakout {
+            keeper: *keeper,
             launch: k.launch,
+            config: pda(&[CONFIG_SEED]),
             mint: k.mint,
             token_vault: k.token_vault,
             sol_vault: k.sol_vault,
+            protocol: pda(&[PROTOCOL_SEED]),
+            dex_config: DEX_CONFIG,
+            migrator: migrator(),
+            migrator_token: pda(&[MIGRATOR_TOKEN_SEED, k.launch.as_ref()]),
+            migrator_wsol: pda(&[MIGRATOR_WSOL_SEED, k.launch.as_ref()]),
+            native_mint: WSOL,
+            position_nft_mint: d.position_nft_mint,
+            position_nft_account: d.position_nft_account,
+            pool: d.pool,
+            position: d.position,
+            pool_token_vault: d.token_vault,
+            pool_wsol_vault: d.wsol_vault,
+            pool_authority: herdcall::damm::POOL_AUTHORITY,
+            dex_event_authority: damm_pda(&[b"__event_authority"]),
+            dex_program: DAMM,
             token_program: anchor_spl::token::ID,
+            token_2022_program: anchor_spl::token_2022::ID,
+            system_program: anchor_lang::system_program::ID,
         }
-        .to_account_metas(None);
-        let ix = self.ix(metas, herdcall::instruction::Breakout {}.data());
+    }
+
+    pub fn breakout_with(&mut self, keeper: &Keypair, accounts: herdcall::accounts::Breakout) -> Result<(), String> {
+        let ix = self.ix(accounts.to_account_metas(None), herdcall::instruction::Breakout {}.data());
         self.send(ix, &[keeper])
+    }
+
+    pub fn breakout(&mut self, k: &LaunchKeys, keeper: &Keypair) -> Result<(), String> {
+        let accounts = self.breakout_accounts(k, &pk(&keeper.pubkey()));
+        self.breakout_with(keeper, accounts)
     }
 
     pub fn register_interface(&mut self, owner: &Keypair) -> Result<Pubkey, String> {

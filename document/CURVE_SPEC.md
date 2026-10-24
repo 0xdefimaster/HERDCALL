@@ -132,6 +132,31 @@ Bu bilinçli bir sonuçtur: Lobby fiyatı yükseldikçe curve'ün tamamı ölçe
    sonsuza kadar yok eder.
 7. Durum **Migrated** olur. Curve bir daha açılmaz.
 
+**Uygulama (programda, testli).** `breakout` tek işlemde:
+- Meteora DAMM v2 `initialize_pool` çağrısıyla havuzu açar. Token A launch tokeni, token B SOL (WSOL); fiyat
+  aralığı tam (DAMM'ın min–max fiyatı).
+- Açılış fiyatı $\sqrt{v/t}$'nin yukarı yuvarlanmışıdır, yani curve'ün son fiyatıdır; altına inmez.
+- Likidite, ayrılan token ve SOL'e sığan en büyük değerdir. Matematik `herdcall-core::dex`'tedir ve DAMM'ın kendi
+  yuvarlamasıyla birebir aynıdır.
+- Pozisyonun **tamamı** `permanent_lock_position` ile kalıcı kilitlenir. Pozisyon NFT'si launch PDA'sındadır.
+- Havuzun almadığı birkaç token birimi yakılır.
+- Fiyat aralığının alt sınırı yüzünden SOL'ün yaklaşık $10^{-8}$'i (120 SOL'de ~1.100 lamport) havuza girmez; bu kısım
+  protokol kasasına gider.
+- Geçiş ücreti $m$ = 0,02 SOL havuzun kirasını öder (ölçülen: 0,0165 SOL); kalanı breakout'u çağırana gider.
+
+**Havuzu önceden açma saldırısı.** DAMM'da config tabanlı havuzun adresi `["pool", config, mint'ler]`'dir. Herkese açık
+bir config'te, curve'den birkaç token alan biri bu havuzu breakout'tan önce açıp breakout'u kalıcı olarak kilitleyebilir
+(test: `nobody_else_can_create_the_canonical_pool`). Bu yüzden program yalnızca **havuz oluşturma yetkisi HerdCall
+migrator PDA'sında olan özel bir config**'i kabul eder. Config ayrıca şunları sağlamalıdır:
+- statik olmalı;
+- ücreti SOL tarafında toplamalı;
+- tam fiyat aralığını kapsamalı;
+- en fazla %2 sabit ücret almalı.
+
+Herkese açık config'ler yalnızca `devnet` derlemesinde kabul edilir. Özel config'i Meteora oluşturur (partner config);
+mainnet öncesi gereklidir (§10). Yönetici config adresini değiştirebilir (`set_dex_config`), ama yeni config de aynı
+kontrollerden geçmek zorundadır.
+
 Mint ve freeze yetkileri breakout'ta değil, **token oluşturulurken** kaldırılır; arz baştan sabittir (§6).
 
 **5.5 Fiyat sürekliliği.** $L_{SOL} \cdot t / v = (v - V_0 - m)\, t / v < t = T_0 - S_{curve}$. Dolayısıyla
@@ -288,8 +313,10 @@ yaratır; v0.1 bunun yerine yakmayı seçer.
 
 - ✅ **DEX:** Meteora DAMM v2; LP kalıcı kilit. ✅ **Kilitli pozisyonun ücretleri:** %25 likiditeye, kalanı creator,
   Rekt-back ve protokole (§5.8). ✅ **Program yükseltilebilir** (çoklu imza + 72 saat zaman kilidi, HERDCALL.md §12).
-- **Havuz ayarları:** DAMM v2 havuz ücret oranı ve ücretin hangi tokenden toplanacağı (yalnızca SOL ya da iki token).
-- **Geçiş ücreti $m$**: gerçek havuz kurulum maliyetine göre.
+- **Havuz ayarları:** ✅ ücret yalnızca SOL'den, tam fiyat aralığı, sabit ücret en fazla %2 (§5.4). **Açık:** ücret oranı
+  (test config'i %1) ve Meteora'nın bu ücretteki protokol payı; ikisi de Meteora'nın oluşturacağı özel config'te
+  belirlenir.
+- **Geçiş ücreti $m$:** ✅ 0,02 SOL; ölçülen havuz kirası 0,0165 SOL, kalanı breakout'u çağıranın (§5.4).
 - **Breakout'a ulaşmayan token'daki Stampede fazlalığı** (§5.6): curve'de mi kalsın, belirli bir süre işlem görmeyen
   tokenlerde holder'lara mı dağıtılsın? Dağıtım, ölü token tanımı ve Diamond Hooves ile birlikte düşünülmeli.
 - ✅ **Program yükseltme:** Yükseltilebilir; çoklu imza + 72 saat zaman kilidi, doğrulanabilir derleme, hedef: denetim ve
