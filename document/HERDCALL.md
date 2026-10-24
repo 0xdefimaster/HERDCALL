@@ -509,8 +509,14 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
      çalışır (`npm run idl`, `programs/idl/herdcall.json`).
    - ⏳ **Devnet:** `scripts/devnet.sh` hazır (config bulma, devnet derlemesi, yükleme, tam akış). Bu oturumun ağ
      politikası `api.devnet.solana.com`'a izin vermediği için henüz çalıştırılmadı; yaklaşık 8 devnet SOL gerekir.
-   - ⏳ Meteora'dan HerdCall migrator PDA'sı için **özel config** (mainnet şartı), kilitli pozisyonun ücretlerinin
-     toplanıp dağıtılması (CURVE_SPEC §5.7).
+   - ✅ **Kilitli pozisyonun ücretleri** (CURVE_SPEC §5.7): `claim_lp_fees` ücreti PDA'dan toplar ve §5.8
+     paylarıyla böler. Creator, Rekt-back ve protokol hemen ödenir; "likiditeye geri" payı kasada bekler. Testler
+     gerçek DAMM v2 ile; yerel doğrulayıcıda tam akışın parçası.
+   - ⏳ "Likiditeye geri" payının pozisyona eklenmesi (`reinvest_lp`): tasarım ve sandviç simülasyonu hazır
+     (CURVE_SPEC §5.7). Uygulama için yol, çağrı başına tavan ve en küçük parti kararı bekliyor.
+   - ⏳ Meteora'dan HerdCall migrator PDA'sı için **özel config** (mainnet şartı).
+   - ⏳ Protokol kasasının HerdVault gelir sırasına göre dağıtımı (§7) ve creator puanı; ikisi de zincirdeki
+     `lp_fees_claimed` ve ücret olaylarını kullanacak.
    - ✅ **Metaplex token metadata** (§12): değiştirilemez ad, sembol, URI; testler gerçek Metaplex programıyla.
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
    açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda. İsteğe bağlı **Creator Bounty** (§4).
@@ -538,6 +544,8 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
 - **Limit fiyat (v2 adayı):** "En fazla şu mcap'e kadar alırım" emri (STAMPEDE_SPEC §11).
 - Curve: kilitli Meteora pozisyonunun ücret dağıtımı (%25 likiditeye önerisi, kalanı?), geçiş ücreti, breakout'a ulaşmayan tokendeki Stampede fazlalığı, program yükseltme yetkisi (CURVE_SPEC §10). ✅ Karar verilen: $T_0$ = 1 milyar, Meteora DAMM v2, LP kalıcı kilit.
 - Create fee miktarı
+- Likiditeye geri ekleme (CURVE_SPEC §5.7): herkes çağırabilen `reinvest_lp` + çağrı başına tavan (öneri: havuzdaki
+  SOL'ün %1'i) mi, protokol keeper'ı mı, yoksa payın kuralı mı değişsin; en küçük parti.
 - Meteora DAMM v2: HerdCall migrator PDA'sı için özel (partner) config; havuz ücreti oranı (test config'i %1) ve
   Meteora'nın bu ücretten aldığı protokol payı (herkese açık config'lerde %20).
 - Breakout'a ulaşmayan token için süreli kapanış istenirse ayrı bir terminal durum (holder'ların çıkış yolu

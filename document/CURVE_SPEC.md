@@ -183,6 +183,48 @@ Lobby'de 20 native'in üzerinde). Bu fazlalık breakout'ta LP'ye gider; breakout
 tutan program onları toplar. Herkes çağırabilen bir `claim_lp_fees` talimatı ücreti toplar ve §5.8'e göre böler;
 "likiditeye geri" payı aynı pozisyona likidite olarak eklenir ve o da kalıcı kilitlenir.
 
+**Uygulama (programda, testli).** `claim_lp_fees`:
+- Ücretleri launch PDA'sının imzasıyla toplar. Ücret yalnızca SOL'dür, çünkü config ücreti token B'den toplar. Token A
+  ücreti gelirse çağrı reddedilir; aksi halde Lobby'nin talep edilmemiş tokenlerine karışırdı.
+- Ücreti `split_lp_fees` ile böler (§5.8 tablosu, kilit oranı dahil):
+  - creator payı creator ücret kasasına gider ve çekilebilir;
+  - Rekt-back ve protokol payları ilgili kasalara gider;
+  - "likiditeye geri" payı launch'ın SOL kasasında `lp_reinvest_pending` olarak bekler. Breakout'tan sonra bu kasa
+    boştur.
+- Çağıran yalnızca işlem ücretini öder; geçici WSOL hesabının kirası geri döner.
+- Toplam `lp_fees_claimed`'de tutulur (creator ve keşif sıralaması için).
+- Meteora, havuz ücretinin kendi protokol payını (herkese açık config'lerde %20) pozisyona gelmeden alır. %1'lik
+  havuzda pozisyona işlem hacminin %0,8'i düşer; yerel doğrulayıcıda 6,06 SOL'lük alım 0,0485 SOL ücret getirdi.
+
+**Likiditeye geri ekleme: tasarım önerisi (henüz uygulanmadı, karar bekliyor).** Ücret SOL olarak gelir. Tam aralıklı
+pozisyona ekleme ise SOL ve tokeni havuz oranında ister. Bu yüzden bekleyen SOL'ün yaklaşık yarısıyla aynı havuzdan
+token alınıp ikisi birlikte eklenmelidir. Herkes çağırabilen bir işlem sandviçlenebilir: saldırgan önce alır, işlem
+pahalı alır, saldırgan sonra satar. Model (`npm run sim:reinvest`, [`sim/lp-reinvest.js`](../sim/lp-reinvest.js))
+sabit çarpım havuzu kullanır; tam aralıklı DAMM pozisyonu buna çok yakındır. Ücret SOL tarafından alınır.
+
+| Havuz ücreti | Sandviçin kâr etmediği en büyük ekleme (havuzdaki SOL'ün payı) |
+|---|---|
+| %0,25 | %0,51 |
+| %0,5 | %1,02 |
+| %1 | %2,05 |
+| %2 | %4,19 |
+
+Sınır yaklaşık **2 × havuz ücreti**dir. 120 SOL'lük ve %1 ücretli havuzda 2 SOL'e kadar her ekleme güvenli; 4 SOL'de
+sandviç 0,19, 8 SOL'de 1,57 SOL kazanır.
+
+Öneri, herkes çağırabilen bir `reinvest_lp` talimatı:
+1. Tutar: $\min(\text{bekleyen},\ c \cdot \text{havuzdaki SOL})$. Önerilen $c$ = %1, yani %1'lik havuzda güvenli
+   sınırın yarısı.
+2. Bu tutarın gereken kısmıyla havuzdan token alır.
+3. `add_liquidity` ile pozisyona ekler ve `permanent_lock_position` ile ekleneni de kilitler.
+4. Kalan, bir sonraki çağrıya bekler.
+
+Ayrıca en küçük parti olmalı (ör. 0,01 SOL), toz eklemeler önlensin. Başka yollar:
+- (b) yalnızca protokol keeper'ı özel paketle (Jito) çağırır: merkezî bir adım;
+- (c) payın kuralı değişir (ör. geri alım ve yakım): aynı sandviç hesabı geçerli, ürün kararı.
+
+**Karar gereken:** yol (öneri: a), $c$ ve en küçük parti.
+
 **5.8 Breakout sonrası ücret dağılımı ve "tut, kazan"**
 
 | Toplanan ücretin | Likiditeye geri | Creator | Rekt-back havuzu | Protokol |
