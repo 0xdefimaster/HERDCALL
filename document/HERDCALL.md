@@ -508,7 +508,8 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
      havuz. Hem mainnet derlemesi + özel config hem devnet derlemesi + herkese açık config ile geçti. İstemci IDL'den
      çalışır (`npm run idl`, `programs/idl/herdcall.json`).
    - ⏳ **Devnet:** `scripts/devnet.sh` hazır (config bulma, devnet derlemesi, yükleme, tam akış). Bu oturumun ağ
-     politikası `api.devnet.solana.com`'a izin vermediği için henüz çalıştırılmadı; yaklaşık 8 devnet SOL gerekir.
+     politikası `api.devnet.solana.com`'a izin vermediği için henüz çalıştırılmadı; yaklaşık 11 devnet SOL gerekir. Akış
+     ve keeper senaryosu devnet derlemesi ve parametreleriyle yerel provada geçti.
    - ✅ **Kilitli pozisyonun ücretleri** (CURVE_SPEC §5.7): `claim_lp_fees` ücreti PDA'dan toplar ve §5.8
      paylarıyla böler. Creator, Rekt-back ve protokol hemen ödenir; "likiditeye geri" payı kasada bekler. Testler
      gerçek DAMM v2 ile; yerel doğrulayıcıda tam akışın parçası.
@@ -516,8 +517,10 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
      için kontrollü keeper akışı. Keeper kendi gözlemlerinden fiyat bandı verir, program bandı ve tavanları kontrol
      eder. Herkese açık yedek mod yok: keeper durursa pay SOL olarak bekler, yönetici keeper'ı değiştirir. Çağrıdan
      önce fiyat oynatma saldırısı gerçek DAMM v2 ile test edildi.
-   - ⏳ **Keeper hizmeti** (zincir dışı): `claim_lp_fees` ve `reinvest_lp`'yi düzenli çağıran, bandı fiyat
-     gözlemlerinden hesaplayan protokol hizmeti. Programdaki kurallar hazır, hizmetin kendisi yazılmadı.
+   - ✅ **Keeper hizmeti** (`scripts/keeper/`, CURVE_SPEC §5.7): ayrı anahtar, 30 dakikalık medyan fiyattan bant,
+     ücret toplama ve yeniden yatırma zamanlaması, simüle edip gönderme, Jito paketi veya RPC, bir günden uzun bekleyen
+     pay için uyarı (kayıt + webhook). Yerel doğrulayıcıda gerçek DAMM v2 ile senaryo testi geçti. Gerçek Jito uç
+     noktasıyla ve devnet'te henüz çalıştırılmadı.
    - ⏳ Meteora'dan HerdCall migrator PDA'sı için **özel config** (mainnet şartı).
    - ⏳ Protokol kasasının HerdVault gelir sırasına göre dağıtımı (§7) ve creator puanı; ikisi de zincirdeki
      `lp_fees_claimed` ve ücret olaylarını kullanacak.

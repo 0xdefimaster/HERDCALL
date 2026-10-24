@@ -8,3 +8,4 @@ target
 programs/keys/
 programs/target/
 programs/fixtures/*.so
+keeper-state.json*

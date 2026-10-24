@@ -252,21 +252,35 @@ protokol de bir çağrının %4,6 / %14,7 / %33,5'ini kaybetti. Saldırganın k�
 uğratılamayacağı anlamına gelmez; bu yol bilerek açılmış bir saldırı yolu olurdu ve kaldırıldı. Aynı kayıp bugün yalnızca
 keeper anahtarı ele geçirilirse mümkündür. O durumda da bir çağrının tavanıyla sınırlıdır ve yönetici anahtarı değiştirir.
 
-**Keeper: kim, hangi teşvikle, ne sıklıkla.**
-- **Kim:** Protokolün çalıştırdığı bir hizmet. Anahtarı yalnızca bu işe ayrılmıştır ve yönetici değiştirebilir.
-- **Teşvik:** Zincir üstü ödül yok. Çağrı başına maliyet işlem ücreti (5.000 lamport) ve öncelik ücretidir. Bunu,
-  aynı ücretlerden payını alan protokol kasası karşılar (gelir sırası, HERDCALL.md §7: operasyon tabanı). Keeper'ın
-  çıkarı protokolün çıkarıdır: likidite derinleşir, protokol payı büyür.
-- **Sıklık:**
-  - Her migrated launch için düzenli `claim_lp_fees` çağırır. Creator da istediği zaman çağırabilir; payı ona gider.
-  - Bekleyen pay 0,01 SOL'ü geçince `reinvest_lp` çağırır, launch başına en fazla saatte bir.
-- **Bant:** Keeper bandı, havuz fiyatının son 30 dakikadaki slot örneklerinin medyanından ±%0,5 olarak hesaplar. Anlık
-  fiyat medyandan %0,5'ten fazla saparsa beklemesi önerilir; bu zincir dışı bir kuraldır.
-- **Gönderim:** İşlemler mümkünse özel paketle (Jito) gönderilir.
-- **Anahtar ele geçirilirse:** Keeper yalnızca yeniden yatırma yapabilir; para çekemez. En kötü durum, yukarıdaki
-  gibi tavanla sınırlı kayıptır. Yönetici anahtarı değiştirir.
-- **Keeper durursa:** Bekleyen pay SOL olarak birikir; hiçbir şey kaybolmaz. Yönetici yeni keeper atar. İzlenecek
-  işaret: bekleyen payı en küçük partiyi aşan ve bir günden uzun beklemiş launch'lar.
+**Keeper hizmeti** (`scripts/keeper/`, `npm run keeper -- --url <rpc> --keypair <keeper anahtarı>`):
+
+| Konu | Uygulama |
+|---|---|
+| Anahtar | Kendi anahtarı. Yönetici anahtarıyla başlamayı reddeder; `Config.reinvest_keeper` kendi anahtarı değilse durur ve yöneticinin `set_reinvest_keeper` çağırması gerektiğini söyler. Para çekme yetkisi yoktur |
+| Fiyat geçmişi | Her migrated launch'ın havuz fiyatını 30 saniyede bir örnekler. Örnekler durum dosyasına (`--state`) yazılır; yeniden başlatma medyanı sıfırlamaz |
+| Bant | Son 30 dakikanın medyan √fiyatı ±%0,25 (fiyatta ±%0,5). En az 20 örnek ve pencerenin %80'ini kapsayan geçmiş gerekir. Anlık fiyat bandın dışındaysa yeniden yatırma yapılmaz, beklenir |
+| Zamanlama | `claim_lp_fees` launch başına 6 saatte bir; `reinvest_lp` bekleyen pay 0,01 SOL'ü geçince, launch başına en fazla saatte bir. Her işlem önce simüle edilir; "toplanacak ücret yok" gibi durumlarda gönderilmez, ücret ödenmez |
+| Gönderim | `--submit jito --jito-url <block engine>`: tek işlemlik Jito paketi, tip'li (`--tip-lamports`); paket bütün inmezse hiçbir şey olmaz. `--submit rpc`: doğrudan RPC. Öncelik ücreti `--priority-micro-lamports` |
+| Küçük havuz | Tavan (havuz SOL'ünün %0,5'i) en küçük partinin altında kalıyorsa denemez, nedenini kaydeder; pay bekler ve bir gün sonra uyarı verir |
+| Uyarı | Bekleyen pay 0,01 SOL'ü aşıp bir günden uzun beklerse `ALERT` kaydı. `--alert-webhook` (veya `KEEPER_ALERT_WEBHOOK`) verilirse oraya JSON gönderilir; 6 saatte bir tekrarlanır |
+| Kayıtlar | Satır başına bir JSON olay: `claimed`, `reinvested`, `reinvest-waiting` (neden), `ALERT`, `error` |
+
+**Maliyet ve teşvik:** Zincir üstü ödül yok. Çağrı başına işlem ücreti, öncelik ücreti ve Jito tip'i (varsayılan 10.000
+lamport) protokol kasasından karşılanır (HERDCALL.md §7, operasyon tabanı).
+
+**Doğrulama (yerel doğrulayıcı, gerçek DAMM v2; `scripts/keeper/scenario.mjs`):**
+1. Yönetici anahtarı ve atanmamış anahtar reddedildi.
+2. 40 SOL hacimden sonra keeper ücreti topladı; 0,0995 SOL bekledi.
+3. Geçmiş yetmediği için yeniden yatırma yapmadı. Bekleyen pay için uyarı üretti, webhook'a gönderdi.
+4. Fiyat %16,2 itildiğinde, medyanın etrafındaki bandın dışında kaldığı için beklemeye devam etti.
+5. Fiyat geri gelince, Jito yolundan tip'li paketle pozisyona 0,119 SOL ekleyip kilitledi.
+
+Aynı senaryo devnet ölçeğinde de geçti: devnet derlemesi ve devnet parametreleri, ~2,5 SOL'lük havuz. Orada tavan
+(0,0131 SOL) bekleyen paydan (0,0151 SOL) küçük olduğu için bir çağrı tavan kadar ekledi, kalanı bekledi. Akış ve keeper
+senaryosu 4,5 SOL'lük bütçeyle çalıştı.
+
+Jito burada sahte bir block engine ile denendi: paketi ve tip'i alıp ağa iletti. Gerçek Jito uç noktasına karşı henüz
+çalıştırılmadı.
 
 **Testler:** Bilerek eklenen hataların hepsi yakalanır: keeper kontrolü, keeper değişimi, bant kontrolü, bant genişliği
 ve tavan. Fiyat hareketi ve token sınırları çağrı tavanının zaten sağladığı şeylerin yedeğidir; testlerde

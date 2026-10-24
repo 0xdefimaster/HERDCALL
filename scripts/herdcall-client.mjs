@@ -76,7 +76,11 @@ export const depositKey = (launch, user) => pda([enc('deposit'), launch.toBuffer
 /** DAMM v2 accounts of a launch's pool: `["pool", config, larger mint, smaller mint]` and what hangs off it. */
 export function dexKeys(dexConfig, k) {
   const [hi, lo] = Buffer.compare(k.mint.toBuffer(), WSOL.toBuffer()) > 0 ? [k.mint, WSOL] : [WSOL, k.mint];
-  const pool = pda([enc('pool'), dexConfig.toBuffer(), hi.toBuffer(), lo.toBuffer()], DAMM);
+  return dexKeysForPool(pda([enc('pool'), dexConfig.toBuffer(), hi.toBuffer(), lo.toBuffer()], DAMM), k);
+}
+
+/** Same, from the pool address a migrated launch recorded (`Launch.dex_pool`). */
+export function dexKeysForPool(pool, k) {
   const nft = k.positionNftMint.toBuffer();
   return {
     pool,
@@ -120,10 +124,13 @@ export function breakoutAccounts(keeper, k, dexConfig) {
   };
 }
 
+// `dexConfig` is the DAMM config the pool was created with, or `{ pool }` with the launch's recorded pool.
+const poolKeys = (x, k) => (x instanceof PublicKey ? dexKeys(x, k) : dexKeysForPool(x.pool, k));
+
 /** Accounts of `claim_lp_fees` for anchor's accountsStrict. */
 export function claimLpFeesAccounts(caller, k, dexConfig) {
   const g = globalKeys();
-  const d = dexKeys(dexConfig, k);
+  const d = poolKeys(dexConfig, k);
   return {
     caller,
     launch: k.launch,
@@ -191,7 +198,7 @@ export function wrapSolIxs(owner, lamports) {
 /** Accounts of `reinvest_lp` for anchor's accountsStrict. */
 export function reinvestLpAccounts(caller, k, dexConfig) {
   const g = globalKeys();
-  const d = dexKeys(dexConfig, k);
+  const d = poolKeys(dexConfig, k);
   return {
     caller,
     config: g.config,
@@ -217,3 +224,25 @@ export function reinvestLpAccounts(caller, k, dexConfig) {
 
 /** Pending "back to liquidity" SOL below this waits (herdcall_core::dex::REINVEST_MIN_LAMPORTS). */
 export const REINVEST_MIN_LAMPORTS = 10_000_000;
+
+const MIN_SQRT_PRICE = 4295048016n;
+
+/**
+ * Of a DAMM v2 pool account's data: √price (Q64.64), liquidity, base fee numerator (over 1e9) and the SOL held by the
+ * liquidity (ceil(L·(√p − √min) / 2^128), herdcall_core::dex::amount_b).
+ */
+export function readPool(data) {
+  const u128 = (at) => data.readBigUInt64LE(at) + (data.readBigUInt64LE(at + 8) << 64n);
+  const liquidity = u128(360);
+  const sqrtPrice = u128(456);
+  const prod = liquidity * (sqrtPrice - MIN_SQRT_PRICE);
+  const sol = (prod + (1n << 128n) - 1n) >> 128n;
+  return { liquidity, sqrtPrice, feeNumerator: data.readBigUInt64LE(8), sol };
+}
+
+/** Lamports one reinvest can take from this pool: min(0.5%, fee / 2) of its SOL (herdcall_core::dex). */
+export function reinvestCap(pool) {
+  const feeBps = (pool.feeNumerator * 10_000n) / 1_000_000_000n;
+  const capBps = feeBps / 2n < 50n ? feeBps / 2n : 50n;
+  return (pool.sol * capBps) / 10_000n;
+}

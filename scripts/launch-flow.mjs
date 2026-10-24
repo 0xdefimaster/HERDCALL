@@ -31,7 +31,8 @@ const preset = arg('params', 'devnet');
 const PARAMS = {
   // `lobby` is each of the three wallets' deposit.
   example: { v0: 30 * SOL, minTotal: SOL, nameBond: SOL / 4, lobby: 1 * SOL },
-  devnet: { v0: 0.3 * SOL, minTotal: 0.1 * SOL, nameBond: 0.01 * SOL, lobby: 0.05 * SOL },
+  // Large enough that the pool (about 2.7 SOL) lets one reinvest take the 0.01 SOL minimum under its 0.5% cap.
+  devnet: { v0: 0.6 * SOL, minTotal: 0.1 * SOL, nameBond: 0.01 * SOL, lobby: 0.05 * SOL },
 }[preset];
 const launchParams = {
   v0: new BN(PARAMS.v0),

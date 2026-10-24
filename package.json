@@ -24,6 +24,8 @@
     "test:client": "node --test scripts/herdcall-client.test.mjs",
     "validator:local": "scripts/local-validator.sh",
     "flow": "node scripts/launch-flow.mjs",
+    "keeper": "node scripts/keeper/keeper.mjs",
+    "test:keeper": "node --test scripts/keeper/logic.test.mjs",
     "test:core": "cd programs/herdcall-core && cargo test",
     "test:program": "cd programs && (ls fixtures/*.so >/dev/null 2>&1 || ./fixtures/fetch.sh) && cargo build-sbf --manifest-path herdcall/Cargo.toml && cargo test -p herdcall-tests"
   },
