@@ -5,3 +5,5 @@ cache
 artifacts
 deployments.json
 target
+programs/keys/
+programs/target/
