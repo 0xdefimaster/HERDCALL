@@ -169,6 +169,7 @@ fn settlement_needs_the_launch_creator_and_records() {
         creator_escrow: k.creator_escrow,
         rekt_back: pda(&[REKT_BACK_SEED]),
         protocol: pda(&[PROTOCOL_SEED]),
+        revenue: pda(&[REVENUE_SEED]),
         ticker_record: k.ticker_record,
         name_record: k.name_record,
         creator: pk(&k.creator.pubkey()),

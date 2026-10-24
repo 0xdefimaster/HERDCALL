@@ -87,7 +87,7 @@ async function main() {
     if (!c.dexConfig.equals(dexConfig)) throw new Error('config points to another DAMM config; use set_dex_config');
   } else {
     await program.methods.initialize(launchParams, dexConfig)
-      .accountsStrict({ admin: payer.publicKey, config: g.config, protocol: g.protocol, rektBack: g.rektBack, systemProgram: SYSTEM })
+      .accountsStrict({ admin: payer.publicKey, config: g.config, protocol: g.protocol, rektBack: g.rektBack, revenue: g.revenue, systemProgram: SYSTEM })
       .rpc();
     ok('config, protocol and Rekt-back vaults created');
   }
@@ -132,7 +132,7 @@ async function main() {
   await program.methods.settle()
     .accountsStrict({
       launch: k.launch, solVault: k.solVault, creatorFees: k.creatorFees, creatorEscrow: k.creatorEscrow,
-      rektBack: g.rektBack, protocol: g.protocol, tickerRecord: k.tickerRecord, nameRecord: k.nameRecord, creator: payer.publicKey,
+      rektBack: g.rektBack, protocol: g.protocol, revenue: g.revenue, tickerRecord: k.tickerRecord, nameRecord: k.nameRecord, creator: payer.publicKey,
     })
     .rpc();
   l = await program.account.launch.fetch(k.launch);
@@ -158,7 +158,7 @@ async function main() {
   const trade = {
     trader: payer.publicKey, launch: k.launch, mint: k.mint, solVault: k.solVault, tokenVault: k.tokenVault,
     traderAta: ata(payer.publicKey, k.mint), creatorFees: k.creatorFees, creatorEscrow: k.creatorEscrow,
-    rektBack: g.rektBack, protocol: g.protocol, interface: null, tokenProgram: TOKEN_PROGRAM,
+    rektBack: g.rektBack, protocol: g.protocol, revenue: g.revenue, interface: null, tokenProgram: TOKEN_PROGRAM,
     associatedTokenProgram: ATA_PROGRAM, systemProgram: SYSTEM,
   };
   const max = new BN('18446744073709551615');
@@ -221,6 +221,15 @@ async function main() {
     check(BigInt(l.lpLiquidity.toString()) > liquidityBefore && lockedAfter === BigInt(l.lpLiquidity.toString()),
       `${l.lpReinvested.toNumber() / SOL} SOL added to the position and locked; ${l.lpReinvestPending.toNumber() / SOL} SOL waits`);
   }
+
+  step('protocol revenue ledger');
+  // Every lamport in the protocol vault beyond its rent is in exactly one counter (HERDCALL.md §7).
+  const r = await program.account.revenueLedger.fetch(g.revenue);
+  const n = (x) => BigInt(x.toString());
+  const protocolInfo = await connection.getAccountInfo(g.protocol);
+  const held = BigInt(protocolInfo.lamports) - BigInt(await connection.getMinimumBalanceForRentExemption(protocolInfo.data.length));
+  check(held === n(r.curve) + n(r.stampede) + n(r.lp) + n(r.rounding) + n(r.other),
+    `revenue: curve ${n(r.curve)}, Stampede ${n(r.stampede)}, LP ${n(r.lp)}; not revenue: rounding ${n(r.rounding)}, other ${n(r.other)} lamports`);
   console.log('\nAll steps passed.');
 }
 

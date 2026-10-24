@@ -440,6 +440,7 @@ fn wrong_accounts_are_rejected() {
                 creator_escrow: a.creator_escrow,
                 rekt_back: pda(&[REKT_BACK_SEED]),
                 protocol: pda(&[PROTOCOL_SEED]),
+                revenue: pda(&[REVENUE_SEED]),
                 ticker_record: a.ticker_record,
                 name_record: a.name_record,
                 creator: pk(&a.creator.pubkey()),

@@ -206,6 +206,70 @@ sonra **operasyon tabanı** dolar (aylık sabit bütçe: RPC, indexer, audit, hu
   milestone bazlı, vesting'li hibe.
 - Ölçülebilir kriterler: on-chain kullanıcı sayısı, ürün yayında mı, kod açık mı.
 
+### 7.1 Dönem geliri $R_t$ ve gelir defteri
+
+**Karar verilenler**
+- **Dönem:** haftalık.
+- **$R_t$:** dönem içinde protokol kasasına fiilen giren net gelir. Üç kaynağı var:
+  - curve işlem ücretlerinin protokol payı;
+  - Stampede ücretinin protokol payı;
+  - kilitli DEX pozisyonunun LP ücretlerinin protokol payı.
+
+  Her lamport bir kez sayılır. Yuvarlama artıkları gelir sayılmaz.
+- **Operasyon tabanı $O_t$:** ilk sürümde 0. Daha sonra haftalık, timelock'lu bir parametre olarak ayarlanabilecek.
+  Tutar burada belirlenmez.
+- **Aktif olmayan kalemler:** Diamond Hooves veya Rekt Mining aktif değilse payı ayrı bir kasada birikmez. 50 / 30 / 20'ye
+  giden kalana eklenir.
+- **Hedef adresler:**
+  - Herd Vault, yöneticinin değiştiremediği sabit bir PDA olacak.
+  - Builders Fund ve operasyon multisig adresleri olacak. Adres değişikliği 72 saatlik timelock'tan geçecek.
+
+**Uygulandı: gelir defteri** (`RevenueLedger`, PDA `["revenue"]`)
+
+Program, protokol kasasına giren her lamport'u girdiği anda tek bir sayaca yazar:
+
+| Sayaç | Ne zaman | Tutar |
+|---|---|---|
+| `curve` | her alım ve satım | `floor(ücret × protokol_bps / 10 000)` |
+| `stampede` | settle | aynı formül, Stampede ücretinden |
+| `lp` | `claim_lp_fees` | `floor(toplanan × protokol_bps / 10 000)` |
+| `rounding` | aynı anlarda | kasaya giren ile nominal pay arasındaki fark |
+| `other` | breakout | fiyat aralığının dışında kalan birkaç lamport |
+
+Ayrıntılar:
+- Protokol payı (`protokol_bps`):
+  - curve ve Stampede: bonded 3000, unbonded 4500. Arayüz yoksa buna arayüz payı (1000) eklenir.
+  - LP: bonded 1500, unbonded 3000.
+- `rounding` ve `other` gelir sayılmaz. $R_t$ = `curve + stampede + lp`.
+- Değişmez: protokol kasasındaki kira üstü bakiye = beş sayacın toplamı.
+  - Programın dışından kasaya doğrudan gönderilen lamport hiçbir sayaca girmez; bakiye o zaman toplamdan büyük olur.
+  - Bu yüzden dağıtım bakiyeyi değil sayaçları kullanacak. Fark sahipsiz kalır.
+
+Testler:
+- Değişmez her adımda kontrol edilir (`programs/herdcall-tests/tests/revenue.rs`):
+  - bonded ve unbonded tam yaşam döngüsü;
+  - her işlemden sonra çekirdekteki bölüşümle birebir karşılaştırma;
+  - başarısız işlem, LP ücreti toplama, yeniden yatırma ve creator çekimi sayaçları değiştirmez;
+  - defter hesabı başka bir hesapla değiştirilemez.
+- Bilerek eklenen 5 hatanın 5'i yakalanır:
+  - yuvarlamayı gelir saymak;
+  - satışı kaydetmemek;
+  - LP gelirini curve saymak;
+  - breakout artığını kaydetmemek;
+  - Stampede'yi curve saymak.
+- Yerel doğrulayıcıda tam akışın son adımı aynı eşitliği zincirde kontrol eder.
+
+Defter haftalık dönemi tutmaz; kümülatiftir. Bir haftanın $R_t$'si, dağıtım talimatının o hafta okuduğu sayaçlarla bir
+önceki dağıtımda okuduğu sayaçlar arasındaki farktır.
+
+**Henüz yazılmadı: dağıtım talimatı.** Haftalık dağıtım; Herd Vault PDA'sı, multisig hedefleri ve 72 saatlik timelock,
+$O_t$ parametresi. Creator puanının ve Herd Vault oy gücünün kesin kuralları belirlenmeden yazılmayacak (§14).
+
+**Creator puanı (karar: c):**
+- Fair Score'dan ayrı, zincirde tutulan bir creator itibarı.
+- Ham hacimden veya kazanılan ücretten değil, launch sonuçlarından hesaplanır.
+- Hangi sonuçların gireceği belli değil. Gelir payına mı, Herd Vault oy gücüne mi dönüşeceği de belli değil (§14).
+
 **Token zamanlaması**
 - $HERD ilk gün çıkmaz. Token çıkana kadar Herd Vault payı **on-chain bir kasada birikir**,
   token lansmanında oylamaya açılır. Gelir kanıtlanmış olur, token için beklenti oluşur.
@@ -522,8 +586,10 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
      pay için uyarı (kayıt + webhook). Yerel doğrulayıcıda gerçek DAMM v2 ile senaryo testi geçti. Gerçek Jito uç
      noktasıyla ve devnet'te henüz çalıştırılmadı.
    - ⏳ Meteora'dan HerdCall migrator PDA'sı için **özel config** (mainnet şartı).
-   - ⏳ Protokol kasasının HerdVault gelir sırasına göre dağıtımı (§7) ve creator puanı; ikisi de zincirdeki
-     `lp_fees_claimed` ve ücret olaylarını kullanacak.
+   - ✅ **Protokol gelir defteri** (§7.1): curve, Stampede ve LP gelirleri ayrı sayaçlarda, her lamport bir kez;
+     yuvarlama ve breakout artığı gelir sayılmaz. Kasa bakiyesi her zaman sayaçların toplamına eşit (testler + yerel
+     doğrulayıcı).
+   - ⏳ Haftalık dağıtım talimatı (§7.1) ve creator puanı: creator puanı ile oy gücü kuralları kesinleşince.
    - ✅ **Metaplex token metadata** (§12): değiştirilemez ad, sembol, URI; testler gerçek Metaplex programıyla.
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
    açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda. İsteğe bağlı **Creator Bounty** (§4).
@@ -557,7 +623,11 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
   tanımlı) gerekir; şimdilik yok. ✅ Karar verilen: minimum Lobby 1 SOL, ad/ticker teminatı 0,25 SOL (ikisi de parametre).
 - Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı
-- Operasyon tabanının aylık tutarı
+- Operasyon tabanı $O_t$: ilk sürümde 0 (✅ karar). Sonraki haftalık tutar ve timelock süresi belirlenecek.
+- **Creator puanı (§7.1):** hangi launch sonuçları girer (ör. breakout'a ulaştı mı, breakout sonrası likidite ve holder
+  sayısı, CTO / Trample), ağırlıkları ve zaman ufku. Puan gelir payına mı, Herd Vault oy gücüne mi dönüşür, hangi
+  oranla. Dağıtım talimatı bu kararlara bağlı.
+- **Herd Vault oy gücü:** ve$HERD kilit eğrisi, cüzdan başına üst sınır ve creator puanının buna katkısı (varsa).
 - Rekt Mining: operasyon tabanı tutarı, claim süresi ve alım penceresi, alım havuzunun derinliği ve kayma toleransı, ödül $HERD'üne vesting, MEV/sandwich koruması
 - Herd Caller: ölçüm ufukları (24 saat / 7 gün / 30 gün), getiri tavanı, en az çağrı sayısı, en küçük çağrı tutarı
 - Creator Bounty: en fazla tahsisat payı, pencere süreleri, Fair Score'a etkisi

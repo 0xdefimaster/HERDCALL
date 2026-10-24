@@ -42,6 +42,10 @@
           "writable": true
         },
         {
+          "name": "revenue",
+          "writable": true
+        },
+        {
           "name": "system_program"
         }
       ],
@@ -259,6 +263,10 @@
           "writable": true
         },
         {
+          "name": "revenue",
+          "writable": true
+        },
+        {
           "name": "ticker_record",
           "writable": true
         },
@@ -425,6 +433,10 @@
           "writable": true
         },
         {
+          "name": "revenue",
+          "writable": true
+        },
+        {
           "name": "interface",
           "writable": true,
           "optional": true
@@ -507,6 +519,10 @@
           "writable": true
         },
         {
+          "name": "revenue",
+          "writable": true
+        },
+        {
           "name": "interface",
           "writable": true,
           "optional": true
@@ -586,6 +602,10 @@
         },
         {
           "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "revenue",
           "writable": true
         },
         {
@@ -728,6 +748,10 @@
           "writable": true
         },
         {
+          "name": "revenue",
+          "writable": true
+        },
+        {
           "name": "dex_config"
         },
         {
@@ -842,6 +866,10 @@
         },
         {
           "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "revenue",
           "writable": true
         },
         {
@@ -1170,6 +1198,19 @@
         49,
         238,
         105
+      ]
+    },
+    {
+      "name": "RevenueLedger",
+      "discriminator": [
+        28,
+        159,
+        94,
+        108,
+        184,
+        213,
+        62,
+        53
       ]
     },
     {
@@ -1780,6 +1821,50 @@
           },
           {
             "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueLedger",
+      "docs": [
+        "Running totals of what the protocol vault received, by source (HERDCALL.md §7, REKT_MINING.md §7.1). Revenue is",
+        "only the protocol's nominal share of curve, Stampede and LP fees; split remainders and other inflows are kept apart",
+        "and are not revenue. Each lamport is recorded once, where it enters the vault. Totals never decrease: a weekly",
+        "distribution will take their growth since the previous one."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "curve",
+            "type": "u64"
+          },
+          {
+            "name": "stampede",
+            "type": "u64"
+          },
+          {
+            "name": "lp",
+            "type": "u64"
+          },
+          {
+            "name": "rounding",
+            "docs": [
+              "Rounding remainders of fee splits that went to the protocol vault."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "other",
+            "docs": [
+              "Other inflows: the few lamports a breakout pool could not take."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }

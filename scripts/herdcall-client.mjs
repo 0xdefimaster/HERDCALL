@@ -48,6 +48,7 @@ export const globalKeys = () => ({
   config: pda([enc('config')]),
   protocol: pda([enc('protocol')]),
   rektBack: pda([enc('rekt_back')]),
+  revenue: pda([enc('revenue')]),
   migrator: pda([enc('migrator')]),
 });
 
@@ -104,6 +105,7 @@ export function breakoutAccounts(keeper, k, dexConfig) {
     tokenVault: k.tokenVault,
     solVault: k.solVault,
     protocol: g.protocol,
+    revenue: g.revenue,
     dexConfig,
     migrator: g.migrator,
     migratorToken: k.migratorToken,
@@ -141,6 +143,7 @@ export function claimLpFeesAccounts(caller, k, dexConfig) {
     creatorFees: k.creatorFees,
     rektBack: g.rektBack,
     protocol: g.protocol,
+    revenue: g.revenue,
     feeWsol: pda([enc('lp_fee_wsol'), k.launch.toBuffer()]),
     pool: d.pool,
     position: d.position,

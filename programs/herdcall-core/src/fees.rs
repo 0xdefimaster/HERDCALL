@@ -123,6 +123,24 @@ pub fn split_fee(
     })
 }
 
+/// The protocol's share of a fee as revenue (HERDCALL.md §7, REKT_MINING.md §7.1): its nominal share, rounded down.
+/// What the protocol receives beyond it (`FeeParts::protocol` takes the rounding remainder of the other parts) is a
+/// rounding leftover, not revenue. Without an interface the interface share is the protocol's, so it counts.
+pub fn curve_protocol_revenue(fee: u128, kind: Kind, has_interface: bool) -> Result<u128> {
+    let s = curve_split(kind);
+    let mut bps = BPS - s.creator - s.interface - s.rekt_back;
+    if !has_interface {
+        bps += s.interface;
+    }
+    div(mul(fee, bps)?, BPS)
+}
+
+/// The same for fees claimed from the locked Meteora position.
+pub fn lp_protocol_revenue(fee: u128, kind: Kind) -> Result<u128> {
+    let s = lp_split(kind);
+    div(mul(fee, BPS - s.liquidity - s.creator - s.rekt_back)?, BPS)
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct LpFeeParts {
     pub liquidity: u128,
@@ -180,5 +198,38 @@ impl CreatorLock {
             self.ratio_bps = r;
         }
         Ok(self.ratio_bps)
+    }
+}
+
+#[cfg(test)]
+mod revenue_tests {
+    use super::*;
+
+    #[test]
+    fn revenue_is_the_nominal_share_and_never_more_than_received() {
+        let mut x: u64 = 0x2545f4914f6cdd1d;
+        for _ in 0..20_000 {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            let fee = (x % 10_000_000_000) as u128;
+            for kind in [Kind::Bonded, Kind::Unbonded] {
+                for iface in [true, false] {
+                    for lock in [BPS, 6_543, 0] {
+                        let p = split_fee(fee, kind, iface, lock).unwrap();
+                        let r = curve_protocol_revenue(fee, kind, iface).unwrap();
+                        assert!(r <= p.protocol && p.protocol - r <= 3, "curve {fee} {kind:?} {iface}: {} vs {r}", p.protocol);
+                    }
+                }
+                let p = split_lp_fees(fee, kind, BPS).unwrap();
+                let r = lp_protocol_revenue(fee, kind).unwrap();
+                assert!(r <= p.protocol && p.protocol - r <= 3, "lp {fee} {kind:?}");
+            }
+        }
+        // Nominal shares: 0.30 / 0.45 of the 1% fee (plus the interface share without an interface); 15% / 30% of LP fees.
+        assert_eq!(curve_protocol_revenue(10_000, Kind::Bonded, true).unwrap(), 3_000);
+        assert_eq!(curve_protocol_revenue(10_000, Kind::Unbonded, false).unwrap(), 5_500);
+        assert_eq!(lp_protocol_revenue(10_000, Kind::Bonded).unwrap(), 1_500);
+        assert_eq!(lp_protocol_revenue(10_000, Kind::Unbonded).unwrap(), 3_000);
     }
 }

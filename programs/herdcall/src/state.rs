@@ -6,6 +6,7 @@ use herdcall_core::stampede::LobbyParams;
 
 pub const CONFIG_SEED: &[u8] = b"config";
 pub const PROTOCOL_SEED: &[u8] = b"protocol";
+pub const REVENUE_SEED: &[u8] = b"revenue";
 pub const REKT_BACK_SEED: &[u8] = b"rekt_back";
 pub const LAUNCH_SEED: &[u8] = b"launch";
 pub const SOL_VAULT_SEED: &[u8] = b"sol_vault";
@@ -196,6 +197,57 @@ impl Launch {
             CorePhase::BreakingOut => Phase::BreakingOut,
             CorePhase::Migrated => Phase::Migrated,
         };
+    }
+}
+
+/// Running totals of what the protocol vault received, by source (HERDCALL.md §7, REKT_MINING.md §7.1). Revenue is
+/// only the protocol's nominal share of curve, Stampede and LP fees; split remainders and other inflows are kept apart
+/// and are not revenue. Each lamport is recorded once, where it enters the vault. Totals never decrease: a weekly
+/// distribution will take their growth since the previous one.
+#[account]
+#[derive(InitSpace)]
+pub struct RevenueLedger {
+    pub curve: u64,
+    pub stampede: u64,
+    pub lp: u64,
+    /// Rounding remainders of fee splits that went to the protocol vault.
+    pub rounding: u64,
+    /// Other inflows: the few lamports a breakout pool could not take.
+    pub other: u64,
+    pub bump: u8,
+}
+
+#[derive(Clone, Copy)]
+pub enum RevenueSource {
+    Curve,
+    Stampede,
+    Lp,
+}
+
+impl RevenueLedger {
+    /// `received`: lamports the protocol vault got from one fee split; `revenue`: the nominal share in it.
+    pub fn record(&mut self, source: RevenueSource, received: u128, revenue: u128) -> Result<()> {
+        let overflow = || error!(crate::errors::HerdError::MathOverflow);
+        let rounding = received.checked_sub(revenue).ok_or_else(overflow)?;
+        let revenue = to_u64(revenue)?;
+        let counter = match source {
+            RevenueSource::Curve => &mut self.curve,
+            RevenueSource::Stampede => &mut self.stampede,
+            RevenueSource::Lp => &mut self.lp,
+        };
+        *counter = counter.checked_add(revenue).ok_or_else(overflow)?;
+        self.rounding = self.rounding.checked_add(to_u64(rounding)?).ok_or_else(overflow)?;
+        Ok(())
+    }
+
+    pub fn record_other(&mut self, lamports: u64) -> Result<()> {
+        self.other = self.other.checked_add(lamports).ok_or(crate::errors::HerdError::MathOverflow)?;
+        Ok(())
+    }
+
+    /// Revenue so far, all sources.
+    pub fn revenue(&self) -> Option<u64> {
+        self.curve.checked_add(self.stampede)?.checked_add(self.lp)
     }
 }
 

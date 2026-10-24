@@ -15,7 +15,7 @@ use anchor_spl::token::{CloseAccount, SyncNative};
 use anchor_spl::token_2022::Token2022;
 use herdcall_core::curve::Market;
 use herdcall_core::dex;
-use herdcall_core::fees::{split_fee, split_lp_fees, FeeParts};
+use herdcall_core::fees::{curve_protocol_revenue, lp_protocol_revenue, split_fee, split_lp_fees, FeeParts};
 use herdcall_core::names::{is_canonical_ticker, releasable};
 use herdcall_core::stampede::{claim_tokens, settle as settle_lobby};
 use herdcall_core::BPS;
@@ -45,6 +45,7 @@ pub mod herdcall {
         c.bump = ctx.bumps.config;
         ctx.accounts.protocol.bump = ctx.bumps.protocol;
         ctx.accounts.rekt_back.bump = ctx.bumps.rekt_back;
+        ctx.accounts.revenue.bump = ctx.bumps.revenue;
         Ok(())
     }
 
@@ -216,6 +217,8 @@ pub mod herdcall {
                 interface: None,
             },
         )?;
+        let revenue = curve_protocol_revenue(s.f, l.kind(), false).map_err(core_err)?;
+        ctx.accounts.revenue.record(RevenueSource::Stampede, parts.protocol, revenue)?;
         emit!(Settled { launch: l.key(), total: l.total_deposits, lobby_tokens: l.lobby_tokens, net: to_u64(s.n)?, fee: to_u64(s.f)?, empty: s.empty });
         Ok(())
     }
@@ -295,6 +298,8 @@ pub mod herdcall {
         let sol_vault = ctx.accounts.sol_vault.to_account_info();
         pay_from_vault(&sol_vault, &ctx.accounts.trader.to_account_info(), to_u64(q.received)?)?;
         pay_parts_from_vault(&sol_vault, &parts, &fee_accounts(ctx.accounts))?;
+        let revenue = curve_protocol_revenue(q.fee, kind, has_iface).map_err(core_err)?;
+        ctx.accounts.revenue.record(RevenueSource::Curve, parts.protocol, revenue)?;
         let l = &mut ctx.accounts.launch;
         l.store_curve(&m.curve)?;
         l.store_phase(m.phase);
@@ -451,6 +456,7 @@ pub mod herdcall {
         let pool = a.pool.key();
         let position = a.position.key();
         let keeper = a.keeper.key();
+        ctx.accounts.revenue.record_other(left_sol)?;
         let l = &mut ctx.accounts.launch;
         l.lp_native = dep.b;
         l.lp_tokens = dep.a;
@@ -517,6 +523,8 @@ pub mod herdcall {
         pay_from_vault(&sol_vault, &a.creator_fees.to_account_info(), to_u64(parts.creator)?)?;
         pay_from_vault(&sol_vault, &a.rekt_back.to_account_info(), to_u64(parts.rekt_back)?)?;
         pay_from_vault(&sol_vault, &a.protocol.to_account_info(), to_u64(parts.protocol)?)?;
+        let revenue = lp_protocol_revenue(fee as u128, a.launch.kind()).map_err(core_err)?;
+        ctx.accounts.revenue.record(RevenueSource::Lp, parts.protocol, revenue)?;
 
         let l = &mut ctx.accounts.launch;
         l.lp_fees_claimed = l.lp_fees_claimed.checked_add(fee).ok_or(HerdError::MathOverflow)?;
@@ -742,6 +750,8 @@ fn settle_buy(ctx: Context<Trade>, m: &Market, kind: herdcall_core::fees::Kind, 
         ),
         tokens,
     )?;
+    let revenue = curve_protocol_revenue(fee, kind, has_iface).map_err(core_err)?;
+    ctx.accounts.revenue.record(RevenueSource::Curve, parts.protocol, revenue)?;
     let l = &mut ctx.accounts.launch;
     l.store_curve(&m.curve)?;
     l.store_phase(m.phase);
@@ -833,6 +843,8 @@ pub struct Initialize<'info> {
     pub protocol: Account<'info, Vault>,
     #[account(init, payer = admin, space = 8 + Vault::INIT_SPACE, seeds = [REKT_BACK_SEED], bump)]
     pub rekt_back: Account<'info, Vault>,
+    #[account(init, payer = admin, space = 8 + RevenueLedger::INIT_SPACE, seeds = [REVENUE_SEED], bump)]
+    pub revenue: Account<'info, RevenueLedger>,
     pub system_program: Program<'info, System>,
 }
 
@@ -896,6 +908,8 @@ pub struct Settle<'info> {
     pub rekt_back: Account<'info, Vault>,
     #[account(mut, seeds = [PROTOCOL_SEED], bump = protocol.bump)]
     pub protocol: Account<'info, Vault>,
+    #[account(mut, seeds = [REVENUE_SEED], bump = revenue.bump)]
+    pub revenue: Box<Account<'info, RevenueLedger>>,
     #[account(mut, seeds = [TICKER_SEED, launch.ticker.as_bytes()], bump = ticker_record.bump, has_one = launch @ HerdError::WrongAccount)]
     pub ticker_record: Account<'info, NameRecord>,
     #[account(mut, seeds = [NAME_SEED, name_seed(&launch.name).ok_or(HerdError::InvalidName)?.as_ref()], bump = name_record.bump, has_one = launch @ HerdError::WrongAccount)]
@@ -963,6 +977,8 @@ pub struct Trade<'info> {
     pub rekt_back: Account<'info, Vault>,
     #[account(mut, seeds = [PROTOCOL_SEED], bump = protocol.bump)]
     pub protocol: Account<'info, Vault>,
+    #[account(mut, seeds = [REVENUE_SEED], bump = revenue.bump)]
+    pub revenue: Box<Account<'info, RevenueLedger>>,
     #[account(mut, seeds = [INTERFACE_SEED, interface.owner.as_ref()], bump = interface.bump)]
     pub interface: Option<Account<'info, TradingInterface>>,
     pub token_program: Program<'info, Token>,
@@ -993,6 +1009,8 @@ pub struct Breakout<'info> {
     pub sol_vault: Box<Account<'info, Vault>>,
     #[account(mut, seeds = [PROTOCOL_SEED], bump = protocol.bump)]
     pub protocol: Box<Account<'info, Vault>>,
+    #[account(mut, seeds = [REVENUE_SEED], bump = revenue.bump)]
+    pub revenue: Box<Account<'info, RevenueLedger>>,
     /// CHECK: owner, layout and pool creator checked by `damm::read_config`.
     #[account(address = config.dex_config @ HerdError::InvalidDexConfig)]
     pub dex_config: UncheckedAccount<'info>,
@@ -1056,6 +1074,8 @@ pub struct ClaimLpFees<'info> {
     pub rekt_back: Box<Account<'info, Vault>>,
     #[account(mut, seeds = [PROTOCOL_SEED], bump = protocol.bump)]
     pub protocol: Box<Account<'info, Vault>>,
+    #[account(mut, seeds = [REVENUE_SEED], bump = revenue.bump)]
+    pub revenue: Box<Account<'info, RevenueLedger>>,
     #[account(init, payer = caller, seeds = [LP_FEE_WSOL_SEED, launch.key().as_ref()], bump, token::mint = native_mint, token::authority = launch)]
     pub fee_wsol: Box<Account<'info, TokenAccount>>,
     /// CHECK: the launch's pool, recorded at breakout; DAMM checks the rest.
