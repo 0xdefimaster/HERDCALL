@@ -2,7 +2,7 @@
 // test vectors. The program recomputes everything and enforces the limits; quotes set those limits.
 import { Market } from '../../sim/curve.js';
 import { CurveState, settleMath } from '../../sim/stampede.js';
-import { big } from './format';
+import { big } from './format.js';
 
 const marketParams = (p, kind) => ({
   v0: big(p.v0), t0: big(p.t0), totalSupply: big(p.totalSupply), curveSupply: big(p.curveSupply),

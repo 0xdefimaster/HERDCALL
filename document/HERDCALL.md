@@ -653,6 +653,59 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
 - Arayüzdeki Diamond Hooves kartı "Planned" etiketiyle konsept önizlemesi olarak gösteriliyor.
 - Eski PyrePad EVM kontratları (`contract/`) çekirdek kontratlar yazılınca kaldırılacak.
 
+### 13.1 Mainnet öncesi durum: bilinen eksikler ve riskler
+
+Durum ifadesi: **testler geçti, mainnet'e hazır değil.**
+- Ana akış ve muhasebe yerel doğrulayıcıda, mainnet'teki Meteora ve Metaplex binary'leriyle doğrulandı.
+- Mainnet ve devnet'te henüz hiçbir şey çalıştırılmadı.
+- Kontrollü deneme planı ve maliyeti: [`MAINNET_SMOKE.md`](MAINNET_SMOKE.md). Onay bekliyor.
+
+Dış bağımlılıklar:
+- **Devnet:** bu oturumun ağ politikası `api.devnet.solana.com`'u ve denenen diğer devnet RPC'lerini engelliyor
+  (HTTP 403). `scripts/devnet.sh` hazır, çalıştırılmadı.
+- **Meteora özel config'i:** mainnet'te havuz yaratıcısı migrator PDA'sı olan config yok (sorgulandı: 0). Breakout
+  bunu bekler. Kamuya açık config yalnızca `devnet` özelliğiyle derlenmiş programda kabul edilir.
+- **Gerçek Jito:** block engine adresi bu ortamdan erişilemiyor (403). Jito yolu yalnızca sahte block engine ile test
+  edildi.
+
+Kararlaştırılmamış ürün parametreleri (programda `initialize`'da kalıcı olur):
+- V0 (CURVE_SPEC §1'deki 30 SOL simülasyon örneği);
+- breakout ücreti (çalışma değeri 0,03 SOL);
+- settle penceresi (300 sn);
+- minimum yatırma (0,01 SOL);
+- Lobby tavanı;
+- cüzdan tavanı.
+
+Programda olmayanlar:
+- **Kasalardan çıkış:** Protokol kasası için haftalık dağıtım talimatı yazılmadı; creator puanı ve oy gücü kuralları
+  bekleniyor (§7.1). Rekt-back kasası için dağıtım tanımlı değil. Bonded creator escrow'unu serbest bırakan talimat da
+  yok (Bonded Creator şartnamesi). Üç kasada biriken SOL ancak bir program yükseltmesiyle çıkar.
+- **Yönetim:** Yönetici rolünü devretme (`set_admin`) yok. Çoklu imza ve 72 saatlik zaman kilidi (CURVE_SPEC özeti,
+  §7.1 hedef adresleri) uygulanmadı. Yükseltme yetkisi tek bir anahtar.
+- **Bond ve vesting:** Bonded Creator bond'u, vesting ve trample yok. Bonded yalnızca ücret bölüşümünü ve escrow'u
+  değiştiriyor.
+
+Doğrulama eksikleri:
+- Harici güvenlik denetimi yapılmadı.
+- Doğrulanabilir derleme (`solana-verify`) yapılmadı. Yüklenecek binary'nin SHA256'sı MAINNET_SMOKE.md'de.
+
+İşletim:
+- Keeper tek örnek ve durum dosyası yerel.
+- Breakout'u herkes çağırabilir, ama çağıranın yaklaşık 0,05 SOL'ü önden ödemesi gerekir. Kimse çağırmazsa launch bekler.
+- Web istemcisinin canlı listesi `getProgramAccounts` kullanıyor. Mainnet'te bir indexer veya ücretli RPC gerekir.
+- Token metadata JSON'unun barındırılması creator'a bırakıldı.
+- Rekt-back, Takeover, Mirror ekranları ve Board'un geri kalanı örnek veriyle.
+
+Repoda başka program:
+- `program/herdcall-v8-import` ve `fix/herdcall-v8-audit` dalları ayrı bir programı (`herdcall-program/`) içeriyor.
+  Bu dala alınmadı.
+- Oradaki inceleme raporunun bu programa uyan bulgusu (`initialize`'ı önden çalıştırma) burada ayrıca düzeltildi
+  (§12, kurulum yetkisi).
+- Diğer bulgular bu programda geçerli değil:
+  - breakout sonrası claim burada açık;
+  - CPI öncesi lamport dengesi burada çözülmüş;
+  - havuzu önceden açma burada özel config ile engelleniyor.
+
 ## 14. Açık sorular
 
 - **Limit fiyat (v2 adayı):** "En fazla şu mcap'e kadar alırım" emri (STAMPEDE_SPEC §11).
