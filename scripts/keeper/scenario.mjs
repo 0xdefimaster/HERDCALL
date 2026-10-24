@@ -155,6 +155,36 @@ try {
   check(l.lpReinvested.toNumber() - reinvestedBefore >= expected * 0.98,
     `${(l.lpReinvested.toNumber() - reinvestedBefore) / SOL} SOL added to the locked position (waiting ${waitingAtPush / SOL}, cap per call ${cap / SOL})`);
   check(seen.bundles > 0 && (await connection.getBalance(tipAccount)) >= 0.001 * SOL + 5000, 'sent as a bundle; the tip reached the tip account');
+
+  step('monitoring: health endpoint and a low balance');
+  const port = 20_000 + Math.floor(Math.random() * 20_000);
+  const alertsBefore = seen.alerts.length;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const [, health] = await Promise.all([
+    runKeeper(keeperPath, 10, ['--health-port', String(port), '--min-balance-sol', '1000', '--alert-webhook', `${mock}/alert`]),
+    sleep(6000).then(() => fetch(`http://127.0.0.1:${port}/health`)).then(async (r) => ({ status: r.status, body: await r.json() })),
+  ]);
+  check(health.status === 200 && health.body.isKeeper && health.body.launches[launch.toBase58()]?.samples > 0,
+    `GET /health: 200, ${health.body.launches[launch.toBase58()]?.samples} price samples for the launch`);
+  const low = seen.alerts.slice(alertsBefore).filter((x) => x.kind === 'balance');
+  check(low.length === 1, 'balance below the threshold: one alert (throttled, not one per loop)');
+
+  step('monitoring: the admin appoints another keeper while it runs');
+  const other = web3.Keypair.generate();
+  const replacedAt = seen.alerts.length;
+  const [events, after] = await Promise.all([
+    runKeeper(keeperPath, 14, ['--refresh-secs', '2', '--health-port', String(port + 1), '--alert-webhook', `${mock}/alert`]),
+    sleep(4000)
+      .then(() => program.methods.setReinvestKeeper(other.publicKey).accountsStrict({ admin: admin.publicKey, config: g.config }).rpc())
+      .then(() => sleep(6000))
+      .then(() => fetch(`http://127.0.0.1:${port + 1}/health`))
+      .then(async (r) => ({ status: r.status, body: await r.json() })),
+  ]);
+  check(events.some((e) => e.event === 'not-keeper'), 'the keeper notices it was replaced');
+  check(seen.alerts.slice(replacedAt).some((x) => x.kind === 'not-keeper'), 'and alerts');
+  check(after.status === 503 && after.body.reasons.includes('not the reinvest keeper'), 'GET /health: 503, not the reinvest keeper');
+  const lateReinvest = events.filter((e) => e.event === 'reinvested' && Date.parse(e.at) > Date.parse(events.find((x) => x.event === 'not-keeper').at));
+  check(lateReinvest.length === 0, 'no reinvest attempted after the replacement');
   console.log('\nKeeper scenario passed.');
 } finally {
   server.close();

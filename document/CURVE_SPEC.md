@@ -264,6 +264,8 @@ keeper anahtarı ele geçirilirse mümkündür. O durumda da bir çağrının ta
 | Küçük havuz | Tavan (havuz SOL'ünün %0,5'i) en küçük partinin altında kalıyorsa denemez, nedenini kaydeder; pay bekler ve bir gün sonra uyarı verir |
 | Uyarı | Bekleyen pay 0,01 SOL'ü aşıp bir günden uzun beklerse `ALERT` kaydı. `--alert-webhook` (veya `KEEPER_ALERT_WEBHOOK`) verilirse oraya JSON gönderilir; 6 saatte bir tekrarlanır |
 | Kayıtlar | Satır başına bir JSON olay: `claimed`, `reinvested`, `reinvest-waiting` (neden), `ALERT`, `error` |
+| İzleme | `scripts/keeper/monitor.mjs`. Uyarı verdiği durumlar (aynı uyarı en fazla 6 saatte bir, `--alert-repeat-secs`): keeper bakiyesi eşiğin altında (`--min-balance-sol`, varsayılan 0,05); yönetici başka bir keeper atadı (atama `--refresh-secs` aralığıyla, varsayılan 5 dakikada bir yeniden okunur; yeniden yatırma durur, ücret toplama sürer); döngü üst üste 3 kez hata verdi (RPC); bir launch'ta gönderim üst üste 3 kez başarısız (inmeyen Jito paketi gibi) |
+| Sağlık | `--health-port <port>`: `GET /health` sağlıklıysa 200, değilse 503 döner. 503 nedenleri: son döngü 4 örnek aralığından eski, anahtar artık keeper değil, döngü hata veriyor. Gövdede bakiye, son uyarılar ve launch başına örnek sayısı, son claim/reinvest zamanı, bekleme başlangıcı ve başarısız gönderim sayısı var. Yalnızca 127.0.0.1'i dinler; dışarıya bir izleme ajanı veya ters vekil açar |
 
 **Maliyet ve teşvik:** Zincir üstü ödül yok. Çağrı başına işlem ücreti, öncelik ücreti ve Jito tip'i (varsayılan 10.000
 lamport) protokol kasasından karşılanır (HERDCALL.md §7, operasyon tabanı).
@@ -279,8 +281,14 @@ Aynı senaryo devnet ölçeğinde de geçti: devnet derlemesi ve devnet parametr
 (0,0131 SOL) bekleyen paydan (0,0151 SOL) küçük olduğu için bir çağrı tavan kadar ekledi, kalanı bekledi. Akış ve keeper
 senaryosu 4,5 SOL'lük bütçeyle çalıştı.
 
+İzleme de aynı senaryoda yerel doğrulayıcıda denendi:
+- `/health` 200 döndü ve launch'ın fiyat örneklerini gösterdi.
+- Düşük bakiye bir kez uyarı verdi; her döngüde tekrarlanmadı.
+- Çalışırken yönetici başka keeper atayınca keeper bunu fark etti ve uyardı. `/health` 503'e döndü ve bundan sonra
+  yeniden yatırma denenmedi.
+
 Jito burada sahte bir block engine ile denendi: paketi ve tip'i alıp ağa iletti. Gerçek Jito uç noktasına karşı henüz
-çalıştırılmadı.
+çalıştırılmadı. Bu ortamda Jito'nun block engine adresine ağ erişimi de yok (HTTP 403).
 
 **Testler:** Bilerek eklenen hataların hepsi yakalanır: keeper kontrolü, keeper değişimi, bant kontrolü, bant genişliği
 ve tavan. Fiyat hareketi ve token sınırları çağrı tavanının zaten sağladığı şeylerin yedeğidir; testlerde
