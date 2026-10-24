@@ -259,16 +259,34 @@ Testler:
   - Stampede'yi curve saymak.
 - Yerel doğrulayıcıda tam akışın son adımı aynı eşitliği zincirde kontrol eder.
 
-Defter haftalık dönemi tutmaz; kümülatiftir. Bir haftanın $R_t$'si, dağıtım talimatının o hafta okuduğu sayaçlarla bir
-önceki dağıtımda okuduğu sayaçlar arasındaki farktır.
+Defter haftalık dönemi tutmaz; kümülatiftir ve olduğu gibi kalır. Bir haftanın $R_t$'si, dağıtım talimatının o hafta
+okuduğu sayaçlarla bir önceki dağıtımda okuduğu sayaçlar arasındaki farktır.
 
-**Henüz yazılmadı: dağıtım talimatı.** Haftalık dağıtım; Herd Vault PDA'sı, multisig hedefleri ve 72 saatlik timelock,
-$O_t$ parametresi. Creator puanının ve Herd Vault oy gücünün kesin kuralları belirlenmeden yazılmayacak (§14).
+**Henüz yazılmadı: dağıtım talimatı.** Kapsamı:
+- haftalık dağıtım;
+- Herd Vault PDA'sı;
+- multisig hedefleri ve 72 saatlik timelock;
+- $O_t$ parametresi.
 
-**Creator puanı (karar: c):**
+Yazıldığında uyacağı kural (karar):
+- **Son dağıtım noktası zincirde saklanır.** Son dağıtımda okunan sayaç değerleri ve dönem numarası zincirde tutulur.
+- Bir dağıtım yalnızca bu noktadan sonraki artışı dağıtır, sonra noktayı ilerletir.
+- Aynı dönem ikinci kez dağıtılamaz. Kümülatif gelirin hiçbir kısmı iki kez dağıtılamaz.
+- Sayaçlar azaltılmaz veya sıfırlanmaz.
+
+**Creator puanı (karar: c)**
+
+Karar verilenler:
 - Fair Score'dan ayrı, zincirde tutulan bir creator itibarı.
-- Ham hacimden veya kazanılan ücretten değil, launch sonuçlarından hesaplanır.
-- Hangi sonuçların gireceği belli değil. Gelir payına mı, Herd Vault oy gücüne mi dönüşeceği de belli değil (§14).
+- **Para payı değildir.** Creator'a doğrudan gelir ödenmez; puan yalnızca Herd Vault oy gücüne katkı yapar.
+- İlk sürümde puan **ham hacim, ücret, fiyat veya holder sayısıyla verilmez**. Bunların hepsi wash trade ve Sybil
+  hesaplarla kolayca şişirilebilir.
+
+Henüz belli değil (§14):
+- Hangi ölçülebilir launch sonuçlarını sayacağı.
+- `veHERD` ile nasıl birleşeceği.
+
+Formül kararlaştırılmadan kodlanmayacak. Puana bağlı hiçbir dağıtım da bu kararlardan önce başlamayacak.
 
 **Token zamanlaması**
 - $HERD ilk gün çıkmaz. Token çıkana kadar Herd Vault payı **on-chain bir kasada birikir**,
@@ -589,7 +607,8 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
    - ✅ **Protokol gelir defteri** (§7.1): curve, Stampede ve LP gelirleri ayrı sayaçlarda, her lamport bir kez;
      yuvarlama ve breakout artığı gelir sayılmaz. Kasa bakiyesi her zaman sayaçların toplamına eşit (testler + yerel
      doğrulayıcı).
-   - ⏳ Haftalık dağıtım talimatı (§7.1) ve creator puanı: creator puanı ile oy gücü kuralları kesinleşince.
+   - ⏳ Haftalık dağıtım talimatı (§7.1): son dağıtım noktası zincirde saklanacak, gelir iki kez dağıtılamayacak.
+   - ⏳ Creator puanı (§7.1): yalnızca oy gücüne katkı, para payı değil; formül kararlaştırılınca.
    - ✅ **Metaplex token metadata** (§12): değiştirilemez ad, sembol, URI; testler gerçek Metaplex programıyla.
 2. **Creator taahhütleri:** Bonded Creator, kilitli tahsisat kasası, teminat, ücret yönlendirmesi. Cezalar yalnızca
    açıkça tanımlanmış ve zincir üstünde doğrulanabilir koşullarda. İsteğe bağlı **Creator Bounty** (§4).
@@ -624,10 +643,14 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
 - Lobby toplam tavanı $D_{max}$ ve isteğe bağlı cüzdan tavanı $w_{max}$
 - CTO tetikleyici süresi, oylama eşiği ve multisig yapısı
 - Operasyon tabanı $O_t$: ilk sürümde 0 (✅ karar). Sonraki haftalık tutar ve timelock süresi belirlenecek.
-- **Creator puanı (§7.1):** hangi launch sonuçları girer (ör. breakout'a ulaştı mı, breakout sonrası likidite ve holder
-  sayısı, CTO / Trample), ağırlıkları ve zaman ufku. Puan gelir payına mı, Herd Vault oy gücüne mi dönüşür, hangi
-  oranla. Dağıtım talimatı bu kararlara bağlı.
-- **Herd Vault oy gücü:** ve$HERD kilit eğrisi, cüzdan başına üst sınır ve creator puanının buna katkısı (varsa).
+- **Creator puanı (§7.1):** ✅ Karar verilen: para payı değil, yalnızca oy gücüne katkı. İlk sürümde ham hacim, ücret,
+  fiyat veya holder sayısı kullanılmaz. Açık olanlar:
+  - hangi ölçülebilir ve şişirilmesi zor launch sonuçlarını sayacağı;
+  - ağırlıkları ve zaman ufku;
+  - `veHERD` oy gücüyle nasıl birleşeceği (ör. ekleme veya çarpan, üst sınır).
+
+  Bunlar kararlaştırılmadan puan kodlanmaz ve dağıtılmaz.
+- **Herd Vault oy gücü:** `veHERD` kilit eğrisi, cüzdan başına üst sınır ve creator puanının katkı payı.
 - Rekt Mining: operasyon tabanı tutarı, claim süresi ve alım penceresi, alım havuzunun derinliği ve kayma toleransı, ödül $HERD'üne vesting, MEV/sandwich koruması
 - Herd Caller: ölçüm ufukları (24 saat / 7 gün / 30 gün), getiri tavanı, en az çağrı sayısı, en küçük çağrı tutarı
 - Creator Bounty: en fazla tahsisat payı, pencere süreleri, Fair Score'a etkisi
