@@ -194,6 +194,7 @@ export function reinvestLpAccounts(caller, k, dexConfig) {
   const d = dexKeys(dexConfig, k);
   return {
     caller,
+    config: g.config,
     launch: k.launch,
     mint: k.mint,
     nativeMint: WSOL,

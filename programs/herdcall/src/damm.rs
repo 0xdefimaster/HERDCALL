@@ -202,6 +202,8 @@ pub fn claim_position_fee(a: &ClaimPositionFee, signers: &[&[&[u8]]]) -> Result<
 
 /// Liquidity and price of a pool (`Pool` is zero-copy; offsets after the discriminator from cp_amm's state/pool.rs).
 pub struct PoolState {
+    /// Base fee numerator over 1e9 (constant: breakout only accepts constant-fee configs).
+    pub fee_numerator: u64,
     pub liquidity: u128,
     pub sqrt_min_price: u128,
     pub sqrt_max_price: u128,
@@ -214,6 +216,7 @@ pub fn read_pool(acc: &AccountInfo) -> Result<PoolState> {
     require!(d.len() >= 8 + 1104 && d[..8] == POOL_DISCRIMINATOR, HerdError::WrongAccount);
     let d = &d[8..];
     Ok(PoolState {
+        fee_numerator: u64::from_le_bytes(d[0..8].try_into().unwrap()),
         liquidity: u128_at(d, 352),
         sqrt_min_price: u128_at(d, 416),
         sqrt_max_price: u128_at(d, 432),

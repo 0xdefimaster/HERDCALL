@@ -202,7 +202,12 @@ async function main() {
     `creator, Rekt-back and protocol paid; ${l.lpReinvestPending.toNumber() / SOL} SOL held for liquidity`);
 
   step('reinvest the "back to liquidity" share');
-  const reinvest = program.methods.reinvestLp().accountsStrict(reinvestLpAccounts(payer.publicKey, k, dexConfig)).preInstructions([cu]);
+  // The payer is the admin, and the admin is the reinvest keeper until set_reinvest_keeper. A real keeper takes the band
+  // from its own price observations over time; this run uses the price it reads now (±0.5%).
+  const poolData = (await connection.getAccountInfo(d.pool)).data;
+  const sqrt = poolData.readBigUInt64LE(456) + (poolData.readBigUInt64LE(464) << 64n);
+  const band = [new BN((sqrt - sqrt / 400n).toString()), new BN((sqrt + sqrt / 400n).toString())];
+  const reinvest = program.methods.reinvestLp(...band).accountsStrict(reinvestLpAccounts(payer.publicKey, k, dexConfig)).preInstructions([cu]);
   if (l.lpReinvestPending.toNumber() < REINVEST_MIN_LAMPORTS) {
     const err = await reinvest.rpc().then(() => null, (e) => e);
     check(err && String(err).includes('NothingToReinvest'), `below 0.01 SOL: rejected, keeps waiting`);

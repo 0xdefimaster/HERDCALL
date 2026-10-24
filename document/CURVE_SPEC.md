@@ -212,31 +212,64 @@ sabit çarpım havuzu kullanır; tam aralıklı DAMM pozisyonu buna çok yakınd
 Sınır yaklaşık **2 × havuz ücreti**dir. 120 SOL'lük ve %1 ücretli havuzda 2 SOL'e kadar her ekleme güvenli; 4 SOL'de
 sandviç 0,19, 8 SOL'de 1,57 SOL kazanır.
 
-**Karar ve uygulama (programda, testli): herkes çağırabilen `reinvest_lp`.** Sınırların hepsi program içinde,
-`herdcall-core::dex`'te sabittir:
+**Fiyat çıpası yok.** Meteora DAMM v2'nin TWAP'ı ya da oracle'ı yok. Yeni bir memecoin için Pyth/Switchboard beslemesi
+de olmaz. Programın kendi kaydedeceği seyrek fiyat gözlemleri de tam gözlem anında oynatılabilir. Bu yüzden program,
+çağrıdan hemen önce oynatılmış bir havuz fiyatını adil fiyattan **ayırt edemez**. Herkesin çağırdığı bir yeniden yatırma,
+sınırlar ne olursa olsun, oynatılmış fiyattan alım yapabilir. Bu nedenle **kontrollü keeper akışı** seçildi; "likiditeye
+geri" kuralı değişmedi.
 
-| Sınır | Değer |
+**Uygulama (programda, testli): `reinvest_lp(min_sqrt_price, max_sqrt_price)`.**
+
+| Kural | Değer |
 |---|---|
+| Kim çağırır | Yalnızca `Config.reinvest_keeper` (yönetici `set_reinvest_keeper` ile atar; başlangıçta yönetici) |
+| Fiyat bandı | Keeper kendi zincir dışı gözlemlerinden bir bant verir; havuz fiyatı bandın dışındaysa çağrı reddedilir. Bant en fazla %2 genişliğinde olabilir |
+| Canlılık yedeği | Bir launch'ta 7 gün (`KEEPER_GRACE_SECS`) keeper yeniden yatırma yapmazsa herkes çağırabilir (kendi bandıyla); ilk başarılı çağrıdan sonra yine yalnızca keeper |
 | En küçük parti | Bekleyen pay 0,01 SOL'e ulaşmadan işlem yapılmaz; küçük tutarlar sayaçta birikir |
-| Çağrı başına tavan | Havuzun likiditesindeki SOL'ün %0,5'i (modeldeki ~%2,05 kârlılık eşiğinin dörtte biri); kalanı sonraki çağrıya bekler |
-| Takas kayması | Takas, çağrı öncesi spot fiyattan (ücretsiz, etkisiz) hesaplanan token miktarının en az %97'sini vermeli |
+| Çağrı başına tavan | Havuz likiditesindeki SOL'ün $\min(\%0{,}5,\ \text{havuz ücreti}/2)$'si. %1'lik havuzda %0,5; %0,25'lik havuzda %0,12 (sabit %0,5 orada kârlılık eşiğine eşit olurdu) |
+| Takas çıktısı | En az: spot miktar × (1 − havuz ücreti) × (1 − %0,5). %1'lik havuzda spotun ~%98,5'i |
 | Fiyat hareketi | Takas havuz fiyatını en fazla %0,6 yükseltebilir |
 | Token miktarı | Bir çağrıda alınan token, havuz likiditesindeki tokenin en fazla %0,5'i |
 
 Bir çağrının adımları:
 1. Tutarın yarısıyla havuzdan token alır.
-2. Yeni fiyatta sığan en büyük likiditeyi ekler ve onu da `permanent_lock_position` ile kilitler.
-3. Artan birkaç token birimi yakılır; kullanılmayan SOL kasada beklemeye devam eder.
+2. Yeni fiyatta sığan en büyük likiditeyi ekler ve `permanent_lock_position` ile kilitler.
+3. Artan birkaç token birimi yakılır; kullanılmayan SOL bekler.
 4. Çağıran yalnızca işlem ücretini öder.
 
-**Bunlar garanti değildir.** Sınırlar tek işlemde riske giren miktarı küçültür; çağrıdan önce oynatılmış bir fiyatı fark
-etmez. Kayma sınırı da çağrı öncesindeki (belki oynatılmış) fiyata göre ölçülür. Simülasyondaki eşik, sabit çarpım
-modeli ve %1 ücret varsayımıyla bir modeldir.
+**Saldırı testleri (gerçek DAMM v2, 1% havuz, ~120 SOL; yalnızca denenen durumlar):**
 
-Gerçek DAMM v2 programıyla yapılan testte 1, 5, 20 ve 60 SOL'lük sandviçler zarar etti (yaklaşık saldırı tutarının
-%1,5'i). Bu yalnızca denenen durumlar içindir. Fiyat hareketi ve token sınırları, çağrı tavanının zaten sağladığı
-şeylerin yedeğidir. Testlerde tetiklenemezler; bilerek kaldırıldıklarında testler bunu yakalamaz. Kayma sınırı ise
-testlidir: havuz ücreti kasten %40'a çıkarıldığında çağrı reddedilir.
+| Senaryo | Sonuç |
+|---|---|
+| Fiyat çağrıdan önce 20 SOL'lük alımla %35,7 itildi, keeper eski gözlemiyle çağırdı | Reddedildi (`PriceOutOfBand`), hiçbir şey harcanmadı. Fiyat geri gelince aynı bant geçti |
+| Bant içinde kalan küçük itme (+%0,33) | Çağrı geçti; adil fiyata göre kayıp %0,79 (havuz ücreti ve fiyat etkisi dahil) |
+| Yedek modda saldırgan 5 SOL ile itip kendisi çağırdı (+%8,4) | Protokol 0,623 SOL'ün 0,028'ini kaybetti (%4,6); saldırgan −0,075 SOL |
+| Aynısı, 20 SOL (+%35,7) | Protokol 0,697'nin 0,102'sini (%14,7); saldırgan −0,301 SOL |
+| Aynısı, 60 SOL (+%123) | Protokol 0,894'ün 0,300'ünü (%33,5); saldırgan −0,903 SOL |
+
+Yedek modda saldırgan kâr etmiyor, ama protokole maliyet bindirebiliyor ("zarar ettirme"). Kayıp, bir çağrının tavanıyla
+sınırlı. Bu yüzden yedek mod yalnızca keeper uzun süre çalışmazsa paranın sonsuza kadar takılı kalmaması içindir. Normal
+çalışmada keeper bandı bu saldırıyı reddeder.
+
+**Keeper: kim, hangi teşvikle, ne sıklıkla.**
+- **Kim:** Protokolün çalıştırdığı bir hizmet. Anahtarı yalnızca bu işe ayrılmıştır ve yönetici değiştirebilir.
+- **Teşvik:** Zincir üstü ödül yok. Çağrı başına maliyet işlem ücreti (5.000 lamport) ve öncelik ücretidir. Bunu,
+  aynı ücretlerden payını alan protokol kasası karşılar (gelir sırası, HERDCALL.md §7: operasyon tabanı). Keeper'ın
+  çıkarı protokolün çıkarıdır: likidite derinleşir, protokol payı büyür.
+- **Sıklık:**
+  - Her migrated launch için düzenli `claim_lp_fees` çağırır. Creator da istediği zaman çağırabilir; payı ona gider.
+  - Bekleyen pay 0,01 SOL'ü geçince `reinvest_lp` çağırır, launch başına en fazla saatte bir.
+- **Bant:** Keeper bandı, havuz fiyatının son 30 dakikadaki slot örneklerinin medyanından ±%0,5 olarak hesaplar. Anlık
+  fiyat medyandan %0,5'ten fazla saparsa beklemesi önerilir; bu zincir dışı bir kuraldır.
+- **Gönderim:** İşlemler mümkünse özel paketle (Jito) gönderilir.
+- **Anahtar ele geçirilirse:** Keeper yalnızca yeniden yatırma yapabilir; para çekemez. En kötü durum, yedek moddaki
+  gibi tavanla sınırlı kayıptır. Yönetici anahtarı değiştirir.
+- **Keeper durursa:** Bekleyen pay birikir. 7 gün sonra herkes çağırabilir; tablodaki kayıp riski o zaman geçerlidir.
+
+**Testler:** Bilerek eklenen 6 hatanın 6'sı yakalanır: keeper kontrolü, bant kontrolü, bant genişliği, tavan, bekleme
+süresi ve zamanlayıcı. Fiyat hareketi ve token sınırları çağrı tavanının zaten sağladığı şeylerin yedeğidir; testlerde
+tetiklenemezler. Takas çıktısı sınırı artık havuzun kendi ücretinden hesaplanıyor; çekirdek birim testleriyle doğrulanır,
+programda tetiklenmesi DAMM durumunu bozmadan mümkün değil.
 
 **5.8 Breakout sonrası ücret dağılımı ve "tut, kazan"**
 

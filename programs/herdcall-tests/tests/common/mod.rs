@@ -653,6 +653,7 @@ impl Env {
         let d = dex_keys(k);
         herdcall::accounts::ReinvestLp {
             caller: *caller,
+            config: pda(&[CONFIG_SEED]),
             launch: k.launch,
             mint: k.mint,
             native_mint: WSOL,
@@ -673,10 +674,27 @@ impl Env {
         }
     }
 
-    pub fn reinvest_lp(&mut self, k: &LaunchKeys, caller: &Keypair) -> Result<(), String> {
+    /// Pool √price (Q64.64).
+    pub fn pool_sqrt_price(&self, k: &LaunchKeys) -> u128 {
+        u128_at(&self.data(&dex_keys(k).pool), 456)
+    }
+
+    pub fn reinvest_lp_band(&mut self, k: &LaunchKeys, caller: &Keypair, min_sqrt_price: u128, max_sqrt_price: u128) -> Result<(), String> {
         let accounts = self.reinvest_lp_accounts(k, &pk(&caller.pubkey()));
-        let ix = self.ix(accounts.to_account_metas(None), herdcall::instruction::ReinvestLp {}.data());
+        let ix = self.ix(accounts.to_account_metas(None), herdcall::instruction::ReinvestLp { min_sqrt_price, max_sqrt_price }.data());
         self.send(ix, &[caller])
+    }
+
+    /// Reinvest with a band of ±0.25% in √price (about ±0.5% in price) around `observed`, like a keeper would.
+    pub fn reinvest_lp_at(&mut self, k: &LaunchKeys, caller: &Keypair, observed: u128) -> Result<(), String> {
+        self.reinvest_lp_band(k, caller, observed - observed / 400, observed + observed / 400)
+    }
+
+    /// The keeper (the admin, by default) reinvests at the current pool price.
+    pub fn reinvest_lp(&mut self, k: &LaunchKeys) -> Result<(), String> {
+        let keeper = self.admin.insecure_clone();
+        let p = self.pool_sqrt_price(k);
+        self.reinvest_lp_at(k, &keeper, p)
     }
 
     /// Rewrites a launch account (tests that need a state normal use would take long to reach).

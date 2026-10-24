@@ -41,6 +41,7 @@ pub mod herdcall {
         c.admin = ctx.accounts.admin.key();
         c.params = params;
         c.dex_config = dex_config;
+        c.reinvest_keeper = ctx.accounts.admin.key();
         c.bump = ctx.bumps.config;
         ctx.accounts.protocol.bump = ctx.bumps.protocol;
         ctx.accounts.rekt_back.bump = ctx.bumps.rekt_back;
@@ -308,6 +309,12 @@ pub mod herdcall {
         Ok(())
     }
 
+    /// Sets the keeper that runs `reinvest_lp` (a protocol service; see CURVE_SPEC §5.7).
+    pub fn set_reinvest_keeper(ctx: Context<AdminOnly>, keeper: Pubkey) -> Result<()> {
+        ctx.accounts.config.reinvest_keeper = keeper;
+        Ok(())
+    }
+
     /// Permissionless, once. Opens the Meteora DAMM v2 pool at the curve's final price with the reserve and the LP
     /// tokens, locks the whole position for good (it keeps earning fees; its NFT stays with the launch PDA) and burns
     /// the LP tokens the pool does not need (CURVE_SPEC §5.4). The migration fee pays the pool's rent and the keeper
@@ -451,6 +458,7 @@ pub mod herdcall {
         l.dex_pool = pool;
         l.dex_position = position;
         l.store_curve(&m.curve)?;
+        l.last_reinvest_at = Clock::get()?.unix_timestamp;
         l.phase = Phase::Migrated;
         emit!(BrokeOut { launch: l.key(), keeper, pool, lp_native: l.lp_native, lp_tokens: l.lp_tokens, burned: l.burned });
         Ok(())
@@ -525,20 +533,32 @@ pub mod herdcall {
         Ok(())
     }
 
-    /// Permissionless. Adds the "back to liquidity" share of the claimed fees to the locked position (CURVE_SPEC §5.7):
-    /// half of the amount buys tokens in the pool, then SOL and tokens are added and the new liquidity is locked for
-    /// good. Limits, all checked here: nothing below 0.01 SOL; at most 0.5% of the pool's SOL per call (the rest
-    /// waits); the swap returns at least the spot amount less 3%, moves the price by at most 0.6% and buys at most 0.5%
-    /// of the pool's tokens. They bound what one call puts at risk; they do not detect a price moved before the call.
-    pub fn reinvest_lp(ctx: Context<ReinvestLp>) -> Result<()> {
+    /// Adds the "back to liquidity" share of the claimed fees to the locked position (CURVE_SPEC §5.7): half of the
+    /// amount buys tokens in the pool, then SOL and tokens are added and the new liquidity is locked for good.
+    ///
+    /// DAMM v2 has no TWAP or oracle, so the program cannot tell a fair price from one moved just before the call. The
+    /// keeper (`Config::reinvest_keeper`) passes a price band (`min_sqrt_price`..`max_sqrt_price`, at most 2% wide)
+    /// from its own observations, and the pool price must be inside it. If a launch goes `KEEPER_GRACE_SECS` without a
+    /// reinvest, anyone may call, with a band of their own. Limits checked here: nothing below 0.01 SOL; per call at
+    /// most min(0.5%, pool fee / 2) of the pool's SOL; the swap returns at least the spot amount less the pool fee and
+    /// 0.5%, moves the price by at most 0.6% and buys at most 0.5% of the pool's tokens. They bound what one call
+    /// puts at risk; they are not a guarantee.
+    pub fn reinvest_lp(ctx: Context<ReinvestLp>, min_sqrt_price: u128, max_sqrt_price: u128) -> Result<()> {
         require!(ctx.accounts.launch.phase == Phase::Migrated, HerdError::NotMigrated);
+        let now = Clock::get()?.unix_timestamp;
         let a = &ctx.accounts;
+        let keeper = a.caller.key() == a.config.reinvest_keeper;
+        let idle = now >= a.launch.last_reinvest_at.saturating_add(dex::KEEPER_GRACE_SECS);
+        require!(keeper || idle, HerdError::KeeperOnly);
+        require!(dex::band_ok(min_sqrt_price, max_sqrt_price), HerdError::BandTooWide);
         let before = damm::read_pool(&a.pool.to_account_info())?;
+        require!(min_sqrt_price <= before.sqrt_price && before.sqrt_price <= max_sqrt_price, HerdError::PriceOutOfBand);
         let (pool_sol, pool_tokens) =
             dex::reserves(before.liquidity, before.sqrt_min_price, before.sqrt_price, before.sqrt_max_price).map_err(core_err)?;
-        let amount = dex::reinvest_amount(a.launch.lp_reinvest_pending, pool_sol).ok_or(HerdError::NothingToReinvest)?;
+        let cap_bps = dex::reinvest_cap_bps(before.fee_numerator);
+        let amount = dex::reinvest_amount(a.launch.lp_reinvest_pending, pool_sol, cap_bps).ok_or(HerdError::NothingToReinvest)?;
         let swap_in = amount / 2;
-        let min_out = dex::reinvest_min_out(swap_in, before.sqrt_price).map_err(core_err)?;
+        let min_out = dex::reinvest_min_out(swap_in, before.sqrt_price, before.fee_numerator).map_err(core_err)?;
 
         let mint_key = a.launch.mint;
         let bump = [a.launch.bump];
@@ -639,6 +659,7 @@ pub mod herdcall {
         l.lp_reinvested = l.lp_reinvested.checked_add(used).ok_or(HerdError::MathOverflow)?;
         l.lp_liquidity = l.lp_liquidity.checked_add(dep.liquidity).ok_or(HerdError::MathOverflow)?;
         l.burned = l.burned.checked_add(left_tokens).ok_or(HerdError::MathOverflow)?;
+        l.last_reinvest_at = now;
         emit!(LpReinvested { launch: l.key(), sol: used, swapped: swap_in, tokens: dep.a, liquidity: dep.liquidity, pending: l.lp_reinvest_pending });
         Ok(())
     }
@@ -1070,6 +1091,8 @@ pub struct ClaimLpFees<'info> {
 pub struct ReinvestLp<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
     #[account(mut, seeds = [LAUNCH_SEED, launch.mint.as_ref()], bump = launch.bump)]
     pub launch: Box<Account<'info, Launch>>,
     #[account(mut, address = launch.mint)]

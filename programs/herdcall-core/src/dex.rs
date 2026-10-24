@@ -96,31 +96,45 @@ pub fn fit(max_a: u64, max_b: u64, sqrt_min: u128, sqrt_price: u128, sqrt_max: u
 // ---------------------------------------------------------------- reinvesting the "back to liquidity" share
 //
 // CURVE_SPEC §5.7: fees arrive as SOL; part of it buys tokens in the same pool, then both are added to the locked
-// position. Anyone can call it, so a call can be sandwiched. These limits keep what one call puts at risk small; they
-// are not a guarantee (a price moved before the call is not detected).
+// position. DAMM v2 has no TWAP or oracle, so the program cannot tell a fair pool price from one moved just before
+// the call. A keeper therefore passes a price band from its own off-chain observations; the program rejects a pool
+// price outside it. These limits bound what one call puts at risk; they are not a guarantee.
 
 /// Pending SOL below this waits for more fees.
 pub const REINVEST_MIN_LAMPORTS: u64 = 10_000_000;
-/// SOL reinvested in one call: at most this share of the SOL in the pool's liquidity.
+/// SOL reinvested in one call: at most this share of the SOL in the pool's liquidity, and at most half the pool fee
+/// (a quarter of the ~2x-fee level where a sandwich starts to pay in sim/lp-reinvest.js).
 pub const REINVEST_MAX_POOL_BPS: u128 = 50;
-/// The swap must return at least the spot amount (pool price before the call, no fee) less this.
-pub const REINVEST_MAX_SLIPPAGE_BPS: u128 = 300;
+/// Price impact allowed on top of the pool fee when checking the swap's output.
+pub const REINVEST_IMPACT_BPS: u128 = 50;
 /// The swap may move the pool price up by at most this.
 pub const REINVEST_MAX_PRICE_MOVE_BPS: u128 = 60;
 /// Tokens bought in one call: at most this share of the tokens in the pool's liquidity.
 pub const REINVEST_MAX_TOKEN_BPS: u128 = 50;
+/// The keeper's price band may span at most this (max price over min price).
+pub const REINVEST_MAX_BAND_BPS: u128 = 200;
+/// Without a reinvest by the keeper for this long, anyone may call (so the share never stays stuck).
+pub const KEEPER_GRACE_SECS: i64 = 7 * 24 * 3600;
+/// DAMM fee numerators are over 1e9.
+pub const FEE_DENOMINATOR: u128 = 1_000_000_000;
 
 /// SOL (token B) and tokens (token A) held by `liquidity` at `sqrt_price` over the range.
 pub fn reserves(liquidity: u128, sqrt_min: u128, sqrt_price: u128, sqrt_max: u128) -> Result<(u128, u128)> {
     Ok((amount_b(liquidity, sqrt_min, sqrt_price)?, amount_a(liquidity, sqrt_price, sqrt_max)?))
 }
 
-/// How much of `pending` to reinvest now: `None` below the minimum, otherwise capped by the pool's SOL.
-pub fn reinvest_amount(pending: u64, pool_sol: u128) -> Option<u64> {
+/// Cap per call in bps of the pool's SOL: min(0.5%, pool fee / 2).
+pub fn reinvest_cap_bps(fee_numerator: u64) -> u128 {
+    let fee_bps = fee_numerator as u128 * crate::BPS / FEE_DENOMINATOR;
+    REINVEST_MAX_POOL_BPS.min(fee_bps / 2)
+}
+
+/// How much of `pending` to reinvest now: `None` below the minimum, otherwise capped.
+pub fn reinvest_amount(pending: u64, pool_sol: u128, cap_bps: u128) -> Option<u64> {
     if pending < REINVEST_MIN_LAMPORTS {
         return None;
     }
-    let cap = pool_sol * REINVEST_MAX_POOL_BPS / crate::BPS;
+    let cap = pool_sol * cap_bps / crate::BPS;
     let amount = (pending as u128).min(cap) as u64;
     (amount >= REINVEST_MIN_LAMPORTS).then_some(amount)
 }
@@ -131,17 +145,25 @@ pub fn spot_tokens(sol: u64, sqrt_price: u128) -> Result<u128> {
     to_u128_512((U512::from(sol) << 128usize) / p2)
 }
 
-/// Least tokens the reinvest swap must return.
-pub fn reinvest_min_out(sol: u64, sqrt_price: u128) -> Result<u64> {
+/// Least tokens the reinvest swap must return: the spot amount less the pool fee and `REINVEST_IMPACT_BPS`.
+pub fn reinvest_min_out(sol: u64, sqrt_price: u128, fee_numerator: u64) -> Result<u64> {
     let spot = spot_tokens(sol, sqrt_price)?;
-    u64::try_from(spot * (crate::BPS - REINVEST_MAX_SLIPPAGE_BPS) / crate::BPS).map_err(|_| Error::Overflow)
+    let after_fee = spot * (FEE_DENOMINATOR - fee_numerator as u128) / FEE_DENOMINATOR;
+    u64::try_from(after_fee * (crate::BPS - REINVEST_IMPACT_BPS) / crate::BPS).map_err(|_| Error::Overflow)
+}
+
+fn sq(x: u128) -> U512 {
+    U512::from(x) * U512::from(x)
 }
 
 /// Whether the price after the swap stays within the allowed move: √after² ≤ √before² · (1 + move).
 pub fn price_move_ok(sqrt_before: u128, sqrt_after: u128) -> bool {
-    let before = U512::from(sqrt_before) * U512::from(sqrt_before);
-    let after = U512::from(sqrt_after) * U512::from(sqrt_after);
-    after * U512::from(crate::BPS) <= before * U512::from(crate::BPS + REINVEST_MAX_PRICE_MOVE_BPS)
+    sq(sqrt_after) * U512::from(crate::BPS) <= sq(sqrt_before) * U512::from(crate::BPS + REINVEST_MAX_PRICE_MOVE_BPS)
+}
+
+/// Whether the keeper's band is narrow enough (max price ≤ min price · 1.02).
+pub fn band_ok(sqrt_min: u128, sqrt_max: u128) -> bool {
+    sqrt_min <= sqrt_max && sq(sqrt_max) * U512::from(crate::BPS) <= sq(sqrt_min) * U512::from(crate::BPS + REINVEST_MAX_BAND_BPS)
 }
 
 #[cfg(test)]
@@ -210,18 +232,23 @@ mod tests {
     #[test]
     fn reinvest_limits() {
         let pool_sol = 120 * SOL as u128;
-        assert_eq!(reinvest_amount(REINVEST_MIN_LAMPORTS - 1, pool_sol), None, "below the minimum");
-        assert_eq!(reinvest_amount(SOL / 10, pool_sol), Some(SOL / 10));
-        assert_eq!(reinvest_amount(5 * SOL, pool_sol), Some(6 * SOL / 10), "capped at 0.5% of the pool's SOL");
-        // A pool too small for the minimum under the cap waits.
-        assert_eq!(reinvest_amount(SOL, (REINVEST_MIN_LAMPORTS as u128) * 100), None);
+        let one_pct = 10_000_000; // fee numerator of a 1% pool
+        assert_eq!(reinvest_cap_bps(one_pct), 50);
+        assert_eq!(reinvest_cap_bps(2_500_000), 12, "0.25% pool: half its fee");
+        assert_eq!(reinvest_cap_bps(20_000_000), 50, "2% pool: still 0.5%");
+        assert_eq!(reinvest_amount(REINVEST_MIN_LAMPORTS - 1, pool_sol, 50), None, "below the minimum");
+        assert_eq!(reinvest_amount(SOL / 10, pool_sol, 50), Some(SOL / 10));
+        assert_eq!(reinvest_amount(5 * SOL, pool_sol, 50), Some(6 * SOL / 10), "capped at 0.5% of the pool's SOL");
+        assert_eq!(reinvest_amount(SOL, (REINVEST_MIN_LAMPORTS as u128) * 100, 50), None, "pool too small for the minimum");
         let s = sqrt_price_ceil(150 * SOL as u128, 200_000_000 * TOKEN as u128).unwrap();
-        // 1 SOL at 150 SOL / 200M tokens is about 1.33M tokens.
+        // 1 SOL at 150 SOL / 200M tokens is about 1.33M tokens; the swap must return 1% fee and 0.5% impact less.
         let spot = spot_tokens(SOL, s).unwrap();
         assert!(spot > 1_333_000 * TOKEN as u128 && spot <= 1_333_334 * TOKEN as u128, "{spot}");
-        assert_eq!(reinvest_min_out(SOL, s).unwrap() as u128, spot * 97 / 100);
+        let min = reinvest_min_out(SOL, s, one_pct).unwrap() as u128;
+        assert!(min >= spot * 9850 / 10_000 - 1 && min <= spot * 9851 / 10_000, "{min} vs {spot}");
         assert!(price_move_ok(s, s) && price_move_ok(s, s + s / 400));
         assert!(!price_move_ok(s, s + s / 300));
+        assert!(band_ok(s, s + s / 200) && !band_ok(s, s + s / 90) && !band_ok(s + 1, s));
     }
 
     #[test]

@@ -60,6 +60,12 @@ pub enum HerdError {
     NothingToReinvest,
     #[msg("Reinvest would exceed its on-chain limits")]
     ReinvestLimit,
+    #[msg("Only the reinvest keeper can call this now")]
+    KeeperOnly,
+    #[msg("Pool price is outside the given band")]
+    PriceOutOfBand,
+    #[msg("Price band is wider than allowed")]
+    BandTooWide,
     #[msg("Name and ticker are held until the launch is cancelled or breaks out")]
     NameNotReleasable,
 }

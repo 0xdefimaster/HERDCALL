@@ -512,10 +512,12 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
    - ✅ **Kilitli pozisyonun ücretleri** (CURVE_SPEC §5.7): `claim_lp_fees` ücreti PDA'dan toplar ve §5.8
      paylarıyla böler. Creator, Rekt-back ve protokol hemen ödenir; "likiditeye geri" payı kasada bekler. Testler
      gerçek DAMM v2 ile; yerel doğrulayıcıda tam akışın parçası.
-   - ✅ **"Likiditeye geri" payı** (`reinvest_lp`, CURVE_SPEC §5.7): herkes çağırabilir. Sınırlar program içinde:
-     0,01 SOL en küçük parti, çağrı başına havuz SOL'ünün %0,5'i, takas kayması %3, fiyat hareketi %0,6, token %0,5.
-     Eklenen likidite de kalıcı kilitlenir. Testler gerçek DAMM v2 ile, sandviç denemesi dahil. Yerel doğrulayıcıda
-     tam akışın parçası.
+   - ✅ **"Likiditeye geri" payı** (`reinvest_lp`, CURVE_SPEC §5.7): DAMM v2'de fiyat çıpası (TWAP/oracle) olmadığı
+     için kontrollü keeper akışı. Keeper kendi gözlemlerinden fiyat bandı verir, program bandı ve tavanları kontrol
+     eder. Keeper 7 gün çalışmazsa herkes çağırabilir. Çağrıdan önce fiyat oynatma saldırısı gerçek DAMM v2 ile test
+     edildi.
+   - ⏳ **Keeper hizmeti** (zincir dışı): `claim_lp_fees` ve `reinvest_lp`'yi düzenli çağıran, bandı fiyat
+     gözlemlerinden hesaplayan protokol hizmeti. Programdaki kurallar hazır, hizmetin kendisi yazılmadı.
    - ⏳ Meteora'dan HerdCall migrator PDA'sı için **özel config** (mainnet şartı).
    - ⏳ Protokol kasasının HerdVault gelir sırasına göre dağıtımı (§7) ve creator puanı; ikisi de zincirdeki
      `lp_fees_claimed` ve ücret olaylarını kullanacak.
