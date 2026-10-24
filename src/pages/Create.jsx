@@ -1,7 +1,16 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import * as anchor from '@anchor-lang/core';
 import { HLogo, ImageIcon } from '../components/icons';
 import { Card, CardTitle, PixelButton, Row } from '../components/ui';
 import { BOND_OPTIONS, FEE_SPLIT, LOBBY_WINDOWS, VEST_OPTIONS, creatorPayout, formatPct } from '../lib/fees';
+import { canonicalName, canonicalTicker, createLaunchAccounts, launchKeys, nameHash } from '../../scripts/herdcall-client.mjs';
+import { programError, useHerdCall } from '../chain/HerdCallContext';
+import { sol } from '../chain/format';
+import { useWallet } from '../wallet/WalletContext';
+
+const { web3, BN } = anchor;
+const MAX_URI = 200;
 
 function PillGroup({ label, options, value, onChange, suffix }) {
   return (
@@ -39,10 +48,39 @@ export default function Create() {
   const [bonded, setBonded] = useState(true);
   const [bond, setBond] = useState(3);
   const [vest, setVest] = useState(60);
+  const [uri, setUri] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState(null);
+  const hc = useHerdCall();
+  const { connect } = useWallet();
+  const navigate = useNavigate();
+  const live = hc.enabled && hc.config;
 
   const split = bonded ? FEE_SPLIT.bonded : FEE_SPLIT.unbonded;
   const payout = creatorPayout(bonded);
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+  const ticker = canonicalTicker(form.ticker);
+  const nameOk = canonicalName(form.name) !== null;
+  const invalid = !ticker ? 'Ticker: 1–10 letters or digits' : !nameOk ? 'Name: 1–32 characters, one line' : uri.length > MAX_URI ? `Metadata URI: at most ${MAX_URI} characters` : null;
+
+  const createLaunch = async () => {
+    setError(null);
+    setSending(true);
+    try {
+      const mint = web3.Keypair.generate();
+      const name = form.name.trim();
+      const k = launchKeys(mint.publicKey, ticker, name);
+      await hc.send(
+        hc.program.methods.createLaunch(bonded, new BN(lobbyWindow), ticker, name, nameHash(name), uri).accountsStrict(createLaunchAccounts(hc.user, k)),
+        { signers: [mint] },
+      );
+      navigate(`/launch/${mint.publicKey.toBase58()}`);
+    } catch (e) {
+      setError(programError(e?.logs) ?? e?.message ?? String(e));
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <main className="max-w-[1240px] mx-auto px-6 pt-8 pb-14">
@@ -67,12 +105,20 @@ export default function Create() {
               <label htmlFor="desc" className="text-[15px] text-hc-muted">Description</label>
               <textarea id="desc" rows={3} value={form.description} onChange={update('description')} className={`${INPUT} py-2.5 resize-y`} />
             </div>
-            <div className="flex flex-wrap gap-4 items-center">
-              <div className="w-[84px] h-[84px] border-[3px] border-dashed border-hc-strong flex items-center justify-center">
-                <ImageIcon />
+            {live ? (
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="uri" className="text-[15px] text-hc-muted">Metadata URI (JSON with image and description, hosted by you)</label>
+                <input id="uri" type="url" value={uri} onChange={(e) => setUri(e.target.value.trim())} placeholder="https://…/token.json" className={`${INPUT} text-base`} />
+                <p className="m-0 text-sm text-hc-muted">Name, ticker and URI are written to immutable Metaplex metadata. The description above is not stored on chain.</p>
               </div>
-              <PixelButton variant="ghost">Upload image</PixelButton>
-            </div>
+            ) : (
+              <div className="flex flex-wrap gap-4 items-center">
+                <div className="w-[84px] h-[84px] border-[3px] border-dashed border-hc-strong flex items-center justify-center">
+                  <ImageIcon />
+                </div>
+                <PixelButton variant="ghost">Upload image</PixelButton>
+              </div>
+            )}
           </Card>
 
           <Card className="flex flex-col gap-3.5">
@@ -105,7 +151,10 @@ export default function Create() {
               Bond SOL and vest your bag. You earn 3× creator fees, rank higher, and lead the herd. Sell before your vest ends and you get{' '}
               <strong className="text-hc-cream">trampled</strong>: bond and escrowed fees go to your holders, and the herd can vote a Community Takeover.
             </p>
-            {bonded && (
+            {bonded && live && (
+              <p className="m-0 text-hc-warn">Bond and vesting are not in the program yet. On chain, Bonded sets the fee split and holds half of your creator fees in escrow; the program has no release for the escrow yet.</p>
+            )}
+            {bonded && !live && (
               <div className="flex flex-wrap gap-5">
                 <div className="flex-[1_1_220px] min-w-0">
                   <div className="text-[15px] text-hc-muted mb-2">Bond (returned at breakout)</div>
@@ -133,14 +182,38 @@ export default function Create() {
           <Row label="Feed placement">{bonded ? 'Boosted' : 'Standard'}</Row>
           {bonded && <Row label="Creator bag vests"><span className="font-terminal text-[22px]">{vest} days</span></Row>}
           <Row label="Lobby window"><span className="font-terminal text-[22px]">{lobbyWindow}s</span></Row>
-          <Row label="You lock now" className="border-t-[3px] border-dashed border-hc-line pt-3">
-            <span className="font-terminal text-[30px] leading-none text-hc-orange">{bonded ? bond : 0} SOL</span>
-          </Row>
-          <Row label="Create fee"><span className="font-terminal text-[22px]">[CREATE FEE]</span></Row>
-          <PixelButton to="/lobby" className="mt-2 min-h-[56px] text-base">Open the Lobby</PixelButton>
-          <p className="mt-1.5 mb-0 text-sm text-hc-muted">
-            Liquidity lock and mint/freeze revocation at breakout are automatic for every token. You can't opt out. Preview only — nothing is deployed yet.
-          </p>
+          {live ? (
+            <>
+              <Row label="Name bond (back at settle)" className="border-t-[3px] border-dashed border-hc-line pt-3">
+                <span className="font-terminal text-[30px] leading-none text-hc-orange">{sol(hc.config.params.nameBond)} SOL</span>
+              </Row>
+              <Row label="Minimum Lobby"><span className="font-terminal text-[22px]">{sol(hc.config.params.minTotal)} SOL</span></Row>
+              <Row label="Create fee"><span className="font-terminal text-[22px]">None (network fees and rent)</span></Row>
+              {!hc.user ? (
+                <PixelButton onClick={connect} className="mt-2 min-h-[56px] text-base">Connect wallet</PixelButton>
+              ) : (
+                <PixelButton onClick={createLaunch} disabled={sending || !!invalid} className="mt-2 min-h-[56px] text-base">
+                  {sending ? 'Sending…' : 'Open the Lobby'}
+                </PixelButton>
+              )}
+              {invalid && <p className="m-0 text-hc-warn">{invalid}</p>}
+              {error && <p role="alert" className="m-0 text-hc-down break-words">{error}</p>}
+              <p className="mt-1.5 mb-0 text-sm text-hc-muted">
+                On {hc.cluster}. If the Lobby reaches the minimum, the curve opens and the name and ticker are yours for good. If not, the launch is cancelled and you can release them and take the bond back.
+              </p>
+            </>
+          ) : (
+            <>
+              <Row label="You lock now" className="border-t-[3px] border-dashed border-hc-line pt-3">
+                <span className="font-terminal text-[30px] leading-none text-hc-orange">{bonded ? bond : 0} SOL</span>
+              </Row>
+              <Row label="Create fee"><span className="font-terminal text-[22px]">[CREATE FEE]</span></Row>
+              <PixelButton to="/lobby" className="mt-2 min-h-[56px] text-base">Open the Lobby</PixelButton>
+              <p className="mt-1.5 mb-0 text-sm text-hc-muted">
+                Liquidity lock and mint/freeze revocation at breakout are automatic for every token. You can't opt out. Preview only — nothing is deployed yet.
+              </p>
+            </>
+          )}
         </Card>
       </div>
     </main>

@@ -1,8 +1,10 @@
 // Addresses and argument encoding of the HerdCall program, shared by scripts (and later the web client).
 // Mirrors programs/herdcall/src/state.rs and the LiteSVM harness in programs/herdcall-tests/tests/common/mod.rs.
-import anchor from '@anchor-lang/core';
+import * as anchorModule from '@anchor-lang/core';
 import { sha256 } from '@noble/hashes/sha256';
 
+// Node loads anchor's CommonJS build (a default export), the browser its ESM build (named exports only).
+const anchor = anchorModule.default ?? anchorModule;
 const { web3 } = anchor;
 const { PublicKey } = web3;
 
@@ -86,6 +88,90 @@ export function launchKeys(mint, ticker, name) {
 }
 
 export const depositKey = (launch, user) => pda([enc('deposit'), launch.toBuffer(), user.toBuffer()]);
+export const interfaceKey = (owner) => pda([enc('interface'), owner.toBuffer()]);
+
+/** Keys of a launch from its on-chain account (`program.account.launch.fetch`). */
+export const keysOf = (launch) => launchKeys(launch.mint, launch.ticker, launch.name);
+
+/** Accounts of `create_launch` for anchor's accountsStrict. The mint is a fresh keypair that signs too. */
+export function createLaunchAccounts(creator, k) {
+  return {
+    creator, config: globalKeys().config, mint: k.mint, launch: k.launch, tokenVault: k.tokenVault, solVault: k.solVault,
+    creatorFees: k.creatorFees, creatorEscrow: k.creatorEscrow, tickerRecord: k.tickerRecord, nameRecord: k.nameRecord,
+    metadata: k.metadata, tokenMetadataProgram: METADATA_PROGRAM, tokenProgram: TOKEN_PROGRAM,
+    associatedTokenProgram: ATA_PROGRAM, systemProgram: SYSTEM, rent: RENT,
+  };
+}
+
+export const depositAccounts = (user, k) => ({
+  user, launch: k.launch, solVault: k.solVault, deposit: depositKey(k.launch, user), systemProgram: SYSTEM,
+});
+
+/** `settle` is permissionless; `creator` must be the launch's creator (it receives the name bond back). */
+export function settleAccounts(k, creator) {
+  const g = globalKeys();
+  return {
+    launch: k.launch, solVault: k.solVault, creatorFees: k.creatorFees, creatorEscrow: k.creatorEscrow,
+    rektBack: g.rektBack, protocol: g.protocol, revenue: g.revenue, tickerRecord: k.tickerRecord, nameRecord: k.nameRecord,
+    creator,
+  };
+}
+
+export const claimAccounts = (user, k) => ({
+  user, launch: k.launch, mint: k.mint, deposit: depositKey(k.launch, user), owner: user, solVault: k.solVault,
+  tokenVault: k.tokenVault, userAta: ata(user, k.mint), tokenProgram: TOKEN_PROGRAM,
+  associatedTokenProgram: ATA_PROGRAM, systemProgram: SYSTEM,
+});
+
+export const refundAccounts = (user, k) => ({
+  user, launch: k.launch, deposit: depositKey(k.launch, user), solVault: k.solVault,
+});
+
+/** Accounts of `buy_exact_in`, `buy_exact_out` and `sell`. `iface`: a registered interface's PDA, or null. */
+export function tradeAccounts(trader, k, iface = null) {
+  const g = globalKeys();
+  return {
+    trader, launch: k.launch, mint: k.mint, solVault: k.solVault, tokenVault: k.tokenVault, traderAta: ata(trader, k.mint),
+    creatorFees: k.creatorFees, creatorEscrow: k.creatorEscrow, rektBack: g.rektBack, protocol: g.protocol,
+    revenue: g.revenue, interface: iface, tokenProgram: TOKEN_PROGRAM, associatedTokenProgram: ATA_PROGRAM,
+    systemProgram: SYSTEM,
+  };
+}
+
+export const releaseNameAccounts = (k, creator) => ({
+  tickerRecord: k.tickerRecord, nameRecord: k.nameRecord, launch: k.launch, creator,
+});
+
+export const withdrawCreatorFeesAccounts = (creator, k) => ({ creator, launch: k.launch, creatorFees: k.creatorFees });
+
+export const adminAccounts = (admin) => ({ admin, config: globalKeys().config });
+
+const SOL_LAMPORTS = 1_000_000_000n;
+const TOKEN_UNITS = 1_000_000n;
+
+/**
+ * Launch parameters for `initialize`, as decimal strings of base units (wrap each in BN for anchor).
+ * - `example`: decided: 1% fee, T0 = supply = 1 billion (800 million curve, 200 million LP), minimum Lobby 1 SOL, name
+ *   bond 0.25 SOL (HERDCALL.md §12, CURVE_SPEC §1). Not decided: V0 = 30 SOL is CURVE_SPEC's simulation example, and
+ *   the migration fee (0.03 SOL), settle window and deposit limits are working values. Parameters are fixed at
+ *   `initialize`, so a production setup needs these decided first.
+ * - `devnet`: the same with the SOL side scaled down so a small balance reaches breakout. For tests only.
+ */
+export const LAUNCH_PRESETS = {
+  example: { v0: 30n * SOL_LAMPORTS, minTotal: SOL_LAMPORTS, nameBond: SOL_LAMPORTS / 4n },
+  devnet: { v0: 6n * SOL_LAMPORTS / 10n, minTotal: SOL_LAMPORTS / 10n, nameBond: SOL_LAMPORTS / 100n },
+};
+
+export function launchParams(preset) {
+  const p = LAUNCH_PRESETS[preset];
+  if (!p) throw new Error(`unknown preset ${preset}`);
+  const supply = 1_000_000_000n * TOKEN_UNITS;
+  return {
+    v0: p.v0, t0: supply, totalSupply: supply, curveSupply: 800_000_000n * TOKEN_UNITS, lpSupply: 200_000_000n * TOKEN_UNITS,
+    feeBps: 100, minDeposit: SOL_LAMPORTS / 100n, minTotal: p.minTotal, maxTotal: 10_000n * SOL_LAMPORTS, maxPerWallet: 0n,
+    migrationFee: 3n * SOL_LAMPORTS / 100n, settleWindow: 300n, nameBond: p.nameBond,
+  };
+}
 
 /** DAMM v2 accounts of a launch's pool: `["pool", config, larger mint, smaller mint]` and what hangs off it. */
 export function dexKeys(dexConfig, k) {
@@ -175,7 +261,7 @@ const SWAP = Uint8Array.from([248, 198, 158, 145, 225, 117, 135, 200]); // sha25
 
 /** DAMM v2 swap on a launch's pool. `solIn` buys tokens with the trader's wrapped SOL. */
 export function dexSwapIx(trader, k, dexConfig, amountIn, solIn) {
-  const d = dexKeys(dexConfig, k);
+  const d = poolKeys(dexConfig, k);
   const [input, output] = solIn ? [ata(trader, WSOL), ata(trader, k.mint)] : [ata(trader, k.mint), ata(trader, WSOL)];
   const data = Buffer.alloc(24);
   data.set(SWAP, 0);

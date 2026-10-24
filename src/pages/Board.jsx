@@ -5,6 +5,7 @@ import { Bar, Card, CardTitle, Change, PixelButton, Sparkline, Tag, TokenAvatar 
 import { MOCK_BOARD, MOCK_POOLS, formatAge, formatUsd } from '../data/mock';
 import { DIAMOND_HOOVES, diamondHoovesBudget, feeBreakdown } from '../lib/fees';
 import { formatClock } from './Lobby';
+import LiveLaunches from '../components/LiveLaunches';
 
 const TABS = [
   { key: 'all', label: 'All' },
@@ -213,6 +214,7 @@ export default function Board() {
   return (
     <main className="px-4 lg:px-6 py-6 flex flex-col xl:flex-row gap-6">
       <div className="flex-1 min-w-0 flex flex-col gap-6">
+        <LiveLaunches />
         <section className="bg-hc-surface border-[3px] border-hc-line p-6 flex flex-wrap items-center justify-between gap-6">
           <div className="flex-[1_1_360px] min-w-0">
             <div className="font-pixel text-xs text-hc-navy-text">Solana launchpad</div>

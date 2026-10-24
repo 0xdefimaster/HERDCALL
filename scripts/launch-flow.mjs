@@ -9,9 +9,10 @@ import anchor from '@anchor-lang/core';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import {
-  PROGRAM_ID, DAMM, METADATA_PROGRAM, TOKEN_PROGRAM, ATA_PROGRAM, SYSTEM, RENT,
-  WSOL, ata, breakoutAccounts, canonicalTicker, claimLpFeesAccounts, createAtaIx, depositKey, dexKeys, dexSwapIx,
-  globalKeys, initializeAccounts, launchKeys, nameHash, reinvestLpAccounts, REINVEST_MIN_LAMPORTS, wrapSolIxs,
+  PROGRAM_ID, DAMM, METADATA_PROGRAM, WSOL, breakoutAccounts, canonicalTicker, claimAccounts, claimLpFeesAccounts,
+  createAtaIx, createLaunchAccounts, depositAccounts, dexKeys, dexSwapIx, globalKeys, initializeAccounts,
+  launchParams as presetParams, launchKeys, nameHash, reinvestLpAccounts, REINVEST_MIN_LAMPORTS, settleAccounts,
+  tradeAccounts, wrapSolIxs,
 } from './herdcall-client.mjs';
 
 const { web3, BN } = anchor;
@@ -27,28 +28,12 @@ const keypairPath = arg('keypair', `${homedir()}/.config/solana/id.json`).replac
 const dexConfig = new web3.PublicKey(arg('dex-config'));
 const preset = arg('params', 'devnet');
 
-// Same numbers as the tests (example) or scaled down 100x on the SOL side so a faucet balance reaches breakout.
-const PARAMS = {
-  // `lobby` is each of the three wallets' deposit.
-  example: { v0: 30 * SOL, minTotal: SOL, nameBond: SOL / 4, lobby: 1 * SOL },
-  // Large enough that the pool (about 2.7 SOL) lets one reinvest take the 0.01 SOL minimum under its 0.5% cap.
-  devnet: { v0: 0.6 * SOL, minTotal: 0.1 * SOL, nameBond: 0.01 * SOL, lobby: 0.05 * SOL },
-}[preset];
-const launchParams = {
-  v0: new BN(PARAMS.v0),
-  t0: new BN(1_000_000_000).mul(new BN(TOKEN)),
-  totalSupply: new BN(1_000_000_000).mul(new BN(TOKEN)),
-  curveSupply: new BN(800_000_000).mul(new BN(TOKEN)),
-  lpSupply: new BN(200_000_000).mul(new BN(TOKEN)),
-  feeBps: 100,
-  minDeposit: new BN(SOL / 100),
-  minTotal: new BN(PARAMS.minTotal),
-  maxTotal: new BN(10_000).mul(new BN(SOL)),
-  maxPerWallet: new BN(0),
-  migrationFee: new BN(3 * SOL / 100),
-  settleWindow: new BN(300),
-  nameBond: new BN(PARAMS.nameBond),
-};
+// Parameters from the shared presets (scripts/herdcall-client.mjs). `lobby` is each of the three wallets' deposit.
+const PARAMS = { lobby: { example: 1 * SOL, devnet: 0.05 * SOL }[preset] };
+if (!PARAMS.lobby) throw new Error(`unknown --params ${preset}`);
+const launchParams = Object.fromEntries(
+  Object.entries(presetParams(preset)).map(([key, v]) => [key, typeof v === 'bigint' ? new BN(v.toString()) : v]),
+);
 
 const payer = web3.Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(keypairPath, 'utf8'))));
 const connection = new web3.Connection(url, 'confirmed');
@@ -100,12 +85,7 @@ async function main() {
   const mint = web3.Keypair.generate();
   const k = launchKeys(mint.publicKey, ticker, name);
   await program.methods.createLaunch(true, new BN(20), ticker, name, nameHash(name), uri)
-    .accountsStrict({
-      creator: payer.publicKey, config: g.config, mint: k.mint, launch: k.launch, tokenVault: k.tokenVault,
-      solVault: k.solVault, creatorFees: k.creatorFees, creatorEscrow: k.creatorEscrow, tickerRecord: k.tickerRecord,
-      nameRecord: k.nameRecord, metadata: k.metadata, tokenMetadataProgram: METADATA_PROGRAM, tokenProgram: TOKEN_PROGRAM,
-      associatedTokenProgram: ATA_PROGRAM, systemProgram: SYSTEM, rent: RENT,
-    })
+    .accountsStrict(createLaunchAccounts(payer.publicKey, k))
     .signers([mint])
     .rpc();
   let l = await program.account.launch.fetch(k.launch);
@@ -118,7 +98,7 @@ async function main() {
   for (const w of wallets.slice(1)) await fund(w.publicKey, PARAMS.lobby + 0.05 * SOL);
   for (const w of wallets) {
     await program.methods.deposit(new BN(PARAMS.lobby))
-      .accountsStrict({ user: w.publicKey, launch: k.launch, solVault: k.solVault, deposit: depositKey(k.launch, w.publicKey), systemProgram: SYSTEM })
+      .accountsStrict(depositAccounts(w.publicKey, k))
       .signers(w === payer ? [] : [w])
       .rpc();
   }
@@ -130,10 +110,7 @@ async function main() {
   while ((await connection.getBlockTime(await connection.getSlot('confirmed'))) <= closeAt) await sleep(2_000);
   const creatorBefore = await lamports(payer.publicKey);
   await program.methods.settle()
-    .accountsStrict({
-      launch: k.launch, solVault: k.solVault, creatorFees: k.creatorFees, creatorEscrow: k.creatorEscrow,
-      rektBack: g.rektBack, protocol: g.protocol, revenue: g.revenue, tickerRecord: k.tickerRecord, nameRecord: k.nameRecord, creator: payer.publicKey,
-    })
+    .accountsStrict(settleAccounts(k, payer.publicKey))
     .rpc();
   l = await program.account.launch.fetch(k.launch);
   check('curve' in l.phase, `curve open, Lobby got ${l.lobbyTokens.toNumber() / TOKEN} tokens`);
@@ -144,23 +121,14 @@ async function main() {
   step('claims');
   for (const w of wallets) {
     await program.methods.claim()
-      .accountsStrict({
-        user: w.publicKey, launch: k.launch, mint: k.mint, deposit: depositKey(k.launch, w.publicKey), owner: w.publicKey,
-        solVault: k.solVault, tokenVault: k.tokenVault, userAta: ata(w.publicKey, k.mint), tokenProgram: TOKEN_PROGRAM,
-        associatedTokenProgram: ATA_PROGRAM, systemProgram: SYSTEM,
-      })
+      .accountsStrict(claimAccounts(w.publicKey, k))
       .signers(w === payer ? [] : [w])
       .rpc();
   }
   ok('every depositor claimed');
 
   step('buy the rest of the curve');
-  const trade = {
-    trader: payer.publicKey, launch: k.launch, mint: k.mint, solVault: k.solVault, tokenVault: k.tokenVault,
-    traderAta: ata(payer.publicKey, k.mint), creatorFees: k.creatorFees, creatorEscrow: k.creatorEscrow,
-    rektBack: g.rektBack, protocol: g.protocol, revenue: g.revenue, interface: null, tokenProgram: TOKEN_PROGRAM,
-    associatedTokenProgram: ATA_PROGRAM, systemProgram: SYSTEM,
-  };
+  const trade = tradeAccounts(payer.publicKey, k);
   const max = new BN('18446744073709551615');
   await program.methods.buyExactOut(max, max).accountsStrict(trade).rpc();
   l = await program.account.launch.fetch(k.launch);

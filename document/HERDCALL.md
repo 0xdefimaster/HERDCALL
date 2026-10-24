@@ -613,6 +613,18 @@ kötü niyetli bir sürüm rezervlere ve escrow'lara dokunabilir. Bu yüzden:
      ücret toplama ve yeniden yatırma zamanlaması, simüle edip gönderme, Jito paketi veya RPC, bir günden uzun bekleyen
      pay için uyarı (kayıt + webhook). Yerel doğrulayıcıda gerçek DAMM v2 ile senaryo testi geçti. Gerçek Jito uç
      noktasıyla ve devnet'te henüz çalıştırılmadı.
+   - ✅ **Web istemcisi programa bağlı** (`src/chain/`, `src/pages/Setup.jsx`, `src/pages/LiveLaunch.jsx`): IDL ve
+     `scripts/herdcall-client.mjs` ile aynı hesap listeleri. Ekranlar:
+     - Setup: kurulum, keeper atama, DAMM config, gelir sayaçları;
+     - Create: gerçek `create_launch`;
+     - launch sayfası, aşamaya göre: Lobby yatırma, settle, iade, claim, curve alım-satımı, breakout, LP ücreti
+       toplama, creator ücret çekimi;
+     - Board'da canlı launch listesi.
+
+     Tarayıcı uçtan uca testi (`npm run test:web`, Playwright + enjekte cüzdan) yerel doğrulayıcıda tüm akışı sayfalardan
+     çalıştırır ve her adımı zincirde kontrol eder. Alım tahmini, alınan token miktarıyla birebir aynı çıktı. Diğer
+     ekranlar (Rekt-back, Takeover, Mirror ve Board'un geri kalanı) hâlâ örnek veriyle önizleme. Bond/vesting ve creator
+     escrow'unun serbest bırakılması programda yok; Create ekranı bunu söylüyor.
    - ⏳ Meteora'dan HerdCall migrator PDA'sı için **özel config** (mainnet şartı).
    - ✅ **Protokol gelir defteri** (§7.1): curve, Stampede ve LP gelirleri ayrı sayaçlarda, her lamport bir kez;
      yuvarlama ve breakout artığı gelir sayılmaz. Kasa bakiyesi her zaman sayaçların toplamına eşit (testler + yerel

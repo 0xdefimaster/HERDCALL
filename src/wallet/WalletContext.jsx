@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
-// Minimal Phantom (Solana) connection. Swap for @solana/wallet-adapter when
-// more wallets and on-chain calls are needed.
+// Minimal Phantom (Solana) connection and transaction signing. Swap for @solana/wallet-adapter when more wallets
+// are needed.
 const WalletContext = createContext(null);
 
 function getProvider() {
@@ -63,8 +63,15 @@ export function WalletProvider({ children }) {
     setPublicKey(null);
   }, []);
 
+  // Signs a web3.js Transaction with the connected wallet (it shows the user what they sign).
+  const signTransaction = useCallback(async (tx) => {
+    const provider = getProvider();
+    if (!provider) throw new Error('No Phantom wallet');
+    return provider.signTransaction(tx);
+  }, []);
+
   return (
-    <WalletContext.Provider value={{ publicKey, error, connect, disconnect }}>
+    <WalletContext.Provider value={{ publicKey, error, connect, disconnect, signTransaction }}>
       {children}
     </WalletContext.Provider>
   );

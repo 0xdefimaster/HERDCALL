@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from
 import { HLogo } from './icons';
 import { PixelButton } from './ui';
 import { shortAddress, useWallet } from '../wallet/WalletContext';
+import { CHAIN_ENABLED, CLUSTER } from '../chain/config';
 
 const NAV_LINKS = [
   { to: '/', label: 'Board', end: true },
@@ -12,6 +13,7 @@ const NAV_LINKS = [
   { to: '/rekt-back', label: 'Rekt-back' },
   { to: '/mirror', label: 'Mirror' },
   { to: '/how-it-works', label: 'How it works' },
+  { to: '/setup', label: 'Setup' },
 ];
 
 function WalletButton() {
@@ -66,7 +68,7 @@ function Sidebar() {
       </figure>
       <div className="mt-auto flex items-center justify-between font-pixel text-xs text-hc-muted">
         <span>Solana</span>
-        <span className="inline-flex items-center gap-2 text-hc-up"><span className="w-2 h-2 bg-hc-up" />Preview</span>
+        <span className="inline-flex items-center gap-2 text-hc-up"><span className="w-2 h-2 bg-hc-up" />{CHAIN_ENABLED ? CLUSTER : 'Preview'}</span>
       </div>
     </aside>
   );
