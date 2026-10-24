@@ -45,7 +45,8 @@ pub struct LaunchParams {
     pub max_per_wallet: u64,
     pub migration_fee: u64,
     pub settle_window: i64,
-    /// Refundable reservation bond (lamports) for the name and ticker; back to the creator at breakout or release.
+    /// Refundable reservation bond (lamports) for the name and ticker, held during the Lobby only: back to the creator
+    /// when the curve opens, or when a cancelled launch's name is released.
     pub name_bond: u64,
 }
 
@@ -102,7 +103,7 @@ pub struct Launch {
     pub name: String,
     pub close_at: i64,
     pub settle_deadline: i64,
-    /// Reservation bond still held in the ticker record (0 once it is paid back).
+    /// Reservation bond still held in the ticker record (0 once it is paid back at settlement or release).
     pub name_bond: u64,
     // Lobby
     pub total_deposits: u64,
@@ -186,7 +187,7 @@ pub struct Deposit {
     pub bump: u8,
 }
 
-/// Reservation of one canonical name or ticker. Held by `launch` from its creation, permanent once it breaks out;
+/// Reservation of one canonical name or ticker. Held by `launch` from its creation, permanent once its curve opens;
 /// anyone can close it when the launch is cancelled (rent and bond go back to the creator).
 #[account]
 #[derive(InitSpace)]

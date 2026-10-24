@@ -11,15 +11,16 @@ test('a minimum Lobby makes squatting cost real SOL, growing faster than the min
   assert.ok(squatLoss(2).surplus > 0.8 * l2);
 });
 
-test('the bond does not change the one-off loss; it stays locked while the name is squatted', () => {
-  assert.equal(squatCost(1, 0, 0).once, squatCost(1, 0.25, 0).once);
-  assert.ok(squatCost(1, 0.25, 1).total > squatCost(1, 0, 1).total);
-  const c = squatCapital(1000, 1, 0.25);
-  assert.ok(Math.abs(c.locked - 1000 * (0.25 + COSTS.recordRent)) < 1e-9);
+test('the bond only raises the capital needed at once, not what is lost', () => {
+  const a = squatCapital(1000, 1, 0);
+  const b = squatCapital(1000, 1, 0.25);
+  assert.equal(a.lost, b.lost);
+  assert.ok(Math.abs(b.peak - a.peak - 250) < 1e-6);
+  assert.ok(Math.abs(squatCost(1) - (squatLoss(1).loss + COSTS.sunkPerLaunch + COSTS.txPerSquat)) < 1e-12);
 });
 
-test('an honest creator loses only the launch rent and a little yield', () => {
+test('an honest creator gets the bond back within the Lobby and loses only the launch rent', () => {
   const c = creatorCost(0.25, 1);
   assert.ok(c.upfront > 0.25 && c.upfront < 0.26);
-  assert.ok(c.lost < 0.008);
+  assert.ok(c.lost - COSTS.sunkPerLaunch < 0.00001);
 });

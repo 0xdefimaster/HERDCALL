@@ -252,6 +252,9 @@ impl Env {
             creator_escrow: k.creator_escrow,
             rekt_back: pda(&[REKT_BACK_SEED]),
             protocol: pda(&[PROTOCOL_SEED]),
+            ticker_record: k.ticker_record,
+            name_record: k.name_record,
+            creator: pk(&k.creator.pubkey()),
         }
         .to_account_metas(None);
         let ix = self.ix(metas, herdcall::instruction::Settle {}.data());
@@ -342,9 +345,6 @@ impl Env {
             mint: k.mint,
             token_vault: k.token_vault,
             sol_vault: k.sol_vault,
-            ticker_record: k.ticker_record,
-            name_record: k.name_record,
-            creator: pk(&k.creator.pubkey()),
             token_program: anchor_spl::token::ID,
         }
         .to_account_metas(None);

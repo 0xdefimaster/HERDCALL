@@ -146,7 +146,7 @@ fiyat sıçraması yok, fazla token yakılır.
 
 **5.6 Breakout'a hiç ulaşmayan token.** Curve süresiz açık kalır; alım ve satım her an açıktır (C4). Süreli bir
 kapanış (alımların kapanması) kararlaştırılmadı; istenirse eski token'ın artık breakout yapamayacağı ve holder'ların
-çıkış yolunun tanımlandığı ayrı bir terminal durum gerekir. Ad ve ticker böyle bir token'da süresiz ayrılı kalır
+çıkış yolunun tanımlandığı ayrı bir terminal durum gerekir. Ad ve ticker curve açıldığında kalıcı olmuştur
 (HERDCALL.md §12). Stampede'nin tek
 fiyatı, rezervde $N^2/(V_0 + 2N)$ kadar bir fazlalık bırakır (herkes satsa bile curve'de kalır; 80 native'lik
 Lobby'de 20 native'in üzerinde). Bu fazlalık breakout'ta LP'ye gider; breakout olmazsa curve'de kalır (§10).

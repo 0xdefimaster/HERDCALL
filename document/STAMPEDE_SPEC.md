@@ -34,7 +34,7 @@ açıldığı fiyattan** girer. İade yoktur (yalnızca boş Lobby'de). Reddedil
 | $f$ | İşlem ücreti, baz puan (bps) | 100 (= %1) |
 | $B$ | Baz puan paydası | 10.000 |
 | $d_{min}$ | Tek bir yatırmanın alt sınırı | 0,01 native |
-| $D_{min}$ | Curve'ün açılması için toplam talep alt sınırı | 0,1 native (simülasyon); program önerisi 1 SOL (HERDCALL.md §12) |
+| $D_{min}$ | Curve'ün açılması için toplam talep alt sınırı | 0,1 native (simülasyon); programda karar 1 SOL (HERDCALL.md §12) |
 | $D_{max}$ | Lobby'nin toplam talep üst sınırı | 10.000 native |
 | $w_{max}$ | Cüzdan başı üst sınır (0 = yok) | 0 |
 | $t_{close}$ | Lobby'nin kapanış zamanı (geri sayımın sonu) | açılış + 15/30/60 sn |
@@ -111,8 +111,8 @@ durum olur: yarım kalan adımlar fonlara dokunmaz, tüm fon hareketleri son ad�
 
 **4.1 Boş ya da yetersiz talep.** $D < D_{min}$ ise (ya da hesaplanan $X = 0$ ise): hiçbir fon curve'e gitmez,
 ücret alınmaz, **curve açılmaz**: launch **Cancelled** olur ve herkes `refund` ile yatırdığının **tamamını** geri alır.
-Ad ve ticker rezervasyonu hemen serbest bırakılabilir (HERDCALL.md §12). $D_{min}$ böylece bir adı boş Lobby ile
-tutmayı da engeller. Test: `zero and below-minimum demand`.
+Ad ve ticker rezervasyonu hemen serbest bırakılabilir; curve açılırsa kalıcı olur (HERDCALL.md §12). $D_{min}$ böylece
+bir adı boş Lobby ile almayı da engeller. Test: `zero and below-minimum demand`.
 
 **4.2 Ücret ve net tutar.** Havuzun tamamı harcanır; iade yoktur:
 

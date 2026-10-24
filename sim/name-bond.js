@@ -1,11 +1,11 @@
 // Cost model of name/ticker squatting (document/HERDCALL.md §12). Amounts in SOL.
 //
-// A name is held from creation; a token on the curve keeps it with no time limit; it is released only when the
-// launch is cancelled (Lobby below the minimum, or never settled). So the only way to hold a name for good is a
-// Lobby that reaches the minimum. The cheapest version: the squatter fills it alone and sells every token back.
-// What is lost for good is the Stampede and sell fees (minus the creator and interface shares the squatter gets
-// back) and the Stampede surplus N²/(V0 + 2N) that stays in the curve (STAMPEDE_SPEC §4.6). The bond is refunded only
-// at breakout or release, so a squatted name keeps it locked.
+// A name is held during the Lobby against a refundable bond. When the Lobby reaches the minimum, the curve opens,
+// the name becomes permanent and the bond goes back; a cancelled Lobby releases the name (bond back too). So the
+// only way to take a name for good is a Lobby that reaches the minimum. The cheapest version: the squatter fills it
+// alone and sells every token back. What is lost for good is the Stampede and sell fees (minus the creator and
+// interface shares the squatter gets back) and the Stampede surplus N²/(V0 + 2N) that stays in the curve
+// (STAMPEDE_SPEC §4.6). The bond is only tied up for the Lobby, so it costs (almost) nothing.
 
 import { marketAfterLobby } from './curve.js';
 import { NATIVE } from './stampede.js';
@@ -42,25 +42,23 @@ export function squatLoss(minLobby, kind = 'unbonded') {
   };
 }
 
-/** Holding one name for good, over `years`: the one-off loss plus the yield of the bond that stays locked. */
-export function squatCost(minLobby, bond, years, c = COSTS, a = ASSUMPTIONS) {
-  const once = squatLoss(minLobby).loss + c.sunkPerLaunch + c.txPerSquat;
-  return { once, total: once + (bond + c.recordRent) * a.yieldPerYear * years };
+/** Taking one name for good: the one-off loss of the minimum Lobby, the launch rent and the transactions. */
+export function squatCost(minLobby, c = COSTS) {
+  return squatLoss(minLobby).loss + c.sunkPerLaunch + c.txPerSquat;
 }
 
-/** Capital tied up at once to squat `names`: the bond stays locked; the Lobby comes back minus its loss. */
+/** Capital to take `names` at once: bond and Lobby during the Lobby; all of it comes back except the loss. */
 export function squatCapital(names, minLobby, bond, c = COSTS) {
   return {
     peak: names * (bond + c.recordRent + c.sunkPerLaunch + minLobby),
-    locked: names * (bond + c.recordRent),
-    lost: names * squatCost(minLobby, bond, 0, c).once,
+    lost: names * squatCost(minLobby, c),
   };
 }
 
-/** An honest creator: bond up front, back at breakout or when the launch is cancelled. */
-export function creatorCost(bond, daysLocked, c = COSTS, a = ASSUMPTIONS) {
+/** An honest creator: bond up front, back when the curve opens or the Lobby is cancelled (after `hoursLocked`). */
+export function creatorCost(bond, hoursLocked, c = COSTS, a = ASSUMPTIONS) {
   return {
     upfront: bond + c.recordRent + c.sunkPerLaunch,
-    lost: c.sunkPerLaunch + (bond + c.recordRent) * a.yieldPerYear * (daysLocked / 365),
+    lost: c.sunkPerLaunch + (bond + c.recordRent) * a.yieldPerYear * (hoursLocked / (365 * 24)),
   };
 }

@@ -137,8 +137,9 @@ pub mod herdcall {
         Ok(())
     }
 
-    /// Permissionless. The pool makes one buy at the price the curve opens at (STAMPEDE_SPEC §4). A Lobby below the
-    /// minimum opens no curve: the launch is cancelled, deposits are refunded and the name and ticker can be released.
+    /// Permissionless. The pool makes one buy at the price the curve opens at (STAMPEDE_SPEC §4); the name and ticker
+    /// become permanent and the bond goes back to the creator. A Lobby below the minimum opens no curve: the launch is
+    /// cancelled, deposits are refunded and the name and ticker can be released.
     pub fn settle(ctx: Context<Settle>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let l = &mut ctx.accounts.launch;
@@ -151,6 +152,11 @@ pub mod herdcall {
             emit!(Settled { launch: l.key(), total: l.total_deposits, lobby_tokens: 0, net: 0, fee: 0, empty: true });
             return Ok(());
         }
+        // The curve opens: name and ticker belong to this launch for good, and the bond has done its job.
+        ctx.accounts.ticker_record.permanent = true;
+        ctx.accounts.name_record.permanent = true;
+        pay_from_vault(&ctx.accounts.ticker_record.to_account_info(), &ctx.accounts.creator.to_account_info(), l.name_bond)?;
+        l.name_bond = 0;
         l.lobby_tokens = to_u64(s.x)?;
         l.store_curve(&curve)?;
         l.phase = Phase::Curve;
@@ -274,16 +280,10 @@ pub mod herdcall {
                 to_u64(mig.burned)?,
             )?;
         }
-        // Name and ticker become permanent; the bond goes back to the creator.
-        ctx.accounts.ticker_record.permanent = true;
-        ctx.accounts.name_record.permanent = true;
-        let bond = ctx.accounts.launch.name_bond;
-        pay_from_vault(&ctx.accounts.ticker_record.to_account_info(), &ctx.accounts.creator.to_account_info(), bond)?;
         let l = &mut ctx.accounts.launch;
         l.lp_native = to_u64(mig.lp_native)?;
         l.lp_tokens = to_u64(mig.lp_tokens)?;
         l.burned = to_u64(mig.burned)?;
-        l.name_bond = 0;
         l.store_curve(&m.curve)?;
         l.phase = Phase::Migrating;
         emit!(BrokeOut { launch: l.key(), keeper: ctx.accounts.keeper.key(), lp_native: l.lp_native, lp_tokens: l.lp_tokens, burned: l.burned });
@@ -291,8 +291,8 @@ pub mod herdcall {
     }
 
     /// Permissionless. Frees the name and ticker of a cancelled launch (Lobby below the minimum, or not settled before
-    /// its deadline). A token on the curve keeps them for as long as it can break out. Both records close; their rent
-    /// and the bond go back to the creator.
+    /// its deadline). Once the curve opens they are permanent. Both records close; their rent and the bond go back to
+    /// the creator.
     pub fn release_name(ctx: Context<ReleaseName>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let l = &mut ctx.accounts.launch;
@@ -512,6 +512,13 @@ pub struct Settle<'info> {
     pub rekt_back: Account<'info, Vault>,
     #[account(mut, seeds = [PROTOCOL_SEED], bump = protocol.bump)]
     pub protocol: Account<'info, Vault>,
+    #[account(mut, seeds = [TICKER_SEED, launch.ticker.as_bytes()], bump = ticker_record.bump, has_one = launch @ HerdError::WrongAccount)]
+    pub ticker_record: Account<'info, NameRecord>,
+    #[account(mut, seeds = [NAME_SEED, name_seed(&launch.name).ok_or(HerdError::InvalidName)?.as_ref()], bump = name_record.bump, has_one = launch @ HerdError::WrongAccount)]
+    pub name_record: Account<'info, NameRecord>,
+    /// CHECK: receives the bond back when the curve opens; must be the launch creator.
+    #[account(mut, address = launch.creator @ HerdError::WrongAccount)]
+    pub creator: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -591,14 +598,6 @@ pub struct Breakout<'info> {
     pub token_vault: Account<'info, TokenAccount>,
     #[account(mut, seeds = [SOL_VAULT_SEED, launch.key().as_ref()], bump = launch.sol_vault_bump)]
     pub sol_vault: Account<'info, Vault>,
-    // A launch that reaches breakout was never cancelled, so it still holds both records.
-    #[account(mut, seeds = [TICKER_SEED, launch.ticker.as_bytes()], bump = ticker_record.bump, has_one = launch @ HerdError::WrongAccount)]
-    pub ticker_record: Account<'info, NameRecord>,
-    #[account(mut, seeds = [NAME_SEED, name_seed(&launch.name).ok_or(HerdError::InvalidName)?.as_ref()], bump = name_record.bump, has_one = launch @ HerdError::WrongAccount)]
-    pub name_record: Account<'info, NameRecord>,
-    /// CHECK: receives the bond back; must be the launch creator.
-    #[account(mut, address = launch.creator @ HerdError::WrongAccount)]
-    pub creator: UncheckedAccount<'info>,
     pub token_program: Program<'info, Token>,
 }
 

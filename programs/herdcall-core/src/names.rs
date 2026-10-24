@@ -1,8 +1,8 @@
 //! Name and ticker reservation rules (document/HERDCALL.md §12, "Ad ve ticker rezervasyonu").
 //!
-//! A launch reserves both its name and its ticker when it opens. They become permanent at breakout. A token on the
-//! curve keeps them for as long as it can still break out, which has no time limit. They are released only when the
-//! launch is cancelled: its Lobby stayed below the minimum, or nobody settled it in time.
+//! A launch reserves both its name and its ticker when it opens, against a refundable bond. When the Lobby reaches the
+//! minimum and the curve opens, they become permanent and the bond goes back. They are released only when the launch
+//! is cancelled: its Lobby stayed below the minimum, or nobody settled it in time.
 
 pub const MAX_TICKER_LEN: usize = 10;
 /// Bytes of the name as given (same limit as Metaplex token metadata).
@@ -31,7 +31,7 @@ pub enum LaunchStatus {
     Lobby,
     /// The Lobby stayed below the minimum, or was not settled before its deadline: no curve, refunds only.
     Cancelled,
-    /// On the curve; it can still break out.
+    /// On the curve: name and ticker are permanent.
     Curve,
     /// Reached breakout (breaking out, migrating or migrated).
     BrokeOut,
