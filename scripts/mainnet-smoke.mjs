@@ -15,6 +15,8 @@
 // System Program address, which breakout refuses); `--stage full` (default) goes through breakout and the keeper. A
 // stage on a program already set up skips initialize, points it at --dex-config if needed and uses a new launch.
 // `--sweep-to <address>` sends what is left on the wallet and the keeper to that address at the end.
+// `--close-program` closes the program at the end (its rent back to the wallet; permanent). `--funded-sol <x>`: what was
+// sent to the wallet before the deploy, so the report reconciles from the funding down to the final balance.
 // `--upgrade-authority-to <address>` hands the program's upgrade authority to that address right after initialize (so
 // its rent can be recovered with `solana program close` from a wallet outside this machine).
 //
@@ -62,6 +64,9 @@ if (!['lobby', 'full'].includes(stage)) throw new Error('--stage lobby|full');
 if (stage === 'full' && dexConfig.equals(web3.PublicKey.default)) throw new Error('--stage full needs a DAMM config');
 const sweepTo = arg('sweep-to', null) && new web3.PublicKey(arg('sweep-to'));
 const authorityTo = arg('upgrade-authority-to', null) && new web3.PublicKey(arg('upgrade-authority-to'));
+const closeProgram = flag('close-program');
+if (closeProgram && authorityTo) throw new Error('--close-program and --upgrade-authority-to: the wallet can close only while it is the authority');
+const fundedSol = arg('funded-sol', null) === null ? null : Math.round(Number(arg('funded-sol')) * SOL);
 const wallet = web3.Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(path(arg('keypair', '~/.config/solana/id.json')), 'utf8'))));
 const keeperPath = arg('keeper', null);
 if (stage === 'full' && !keeperPath) throw new Error('--stage full needs --keeper <keypair> (its own key, not the wallet)');
@@ -99,7 +104,7 @@ function approvalToken() {
     stage, bonded, wallet: wallet.publicKey.toBase58(), keeper: keeperPath ? keeper.publicKey.toBase58() : null,
     program: PROGRAM_ID.toBase58(), soSha256: createHash('sha256').update(readFileSync(so)).digest('hex'),
     dexConfig: dexConfig.toBase58(), ticker, name, maxSpend: MAX_SPEND.toString(), sweepTo: sweepTo?.toBase58() ?? null,
-    upgradeAuthorityTo: authorityTo?.toBase58() ?? null,
+    upgradeAuthorityTo: authorityTo?.toBase58() ?? null, closeProgram,
   };
   return { plan, token: createHash('sha256').update(JSON.stringify(plan)).digest('hex').slice(0, 16) };
 }
@@ -186,7 +191,7 @@ async function main() {
   }
   console.log(`deployed program matches ${so} (sha256 ${plan.soSha256})`);
   const start = await balances();
-  if (!live && start.w < 10 * SOL) {
+  if (!live && fundedSol === null && start.w < 10 * SOL) {
     await connection.confirmTransaction(await connection.requestAirdrop(wallet.publicKey, 20 * SOL), 'confirmed');
   }
   const funded = await balances();
@@ -252,6 +257,11 @@ async function main() {
     const back = marketOf(l).quoteSell(all);
     await step('sell the Lobby tokens to the curve', () => rpc(program.methods.sell(new BN(all.toString()), new BN(withSlippage(back.received, 100).toString())).accountsStrict(tradeAccounts(wallet.publicKey, k))),
       'the Lobby deposit back, less fees');
+    await step('close the empty token account', () => sendTx([new web3.TransactionInstruction({
+      programId: new web3.PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'), data: Buffer.from([9]), keys: [
+        { pubkey: ata(wallet.publicKey, mint.publicKey), isSigner: false, isWritable: true },
+        { pubkey: wallet.publicKey, isSigner: false, isWritable: true }, { pubkey: wallet.publicKey, isSigner: true, isWritable: false }] })], [wallet]),
+    'its rent back');
     await step('withdraw creator fees', () => rpc(program.methods.withdrawCreatorFees().accountsStrict(withdrawCreatorFeesAccounts(wallet.publicKey, k))), 'creator share back');
     return finish(funded, lowest, null, plan);
   }
@@ -296,35 +306,63 @@ async function main() {
 }
 
 async function finish(funded, lowest, dex, plan) {
-  const end = await balances();
   const r = await program.account.revenueLedger.fetch(g.revenue);
-  const total = (key) => rows.reduce((s, x) => s + x[key], 0);
   const vault = async (key) => (await connection.getBalance(key)) - (await connection.getMinimumBalanceForRentExemption(9));
   const stuck = {
     protocol: await vault(g.protocol), rektBack: await vault(g.rektBack), creatorEscrow: await vault(k.creatorEscrow),
     ...(dex ? { poolSol: Number(readPool((await connection.getAccountInfo(dex.pool)).data).sol) } : { curveReserve: (await program.account.launch.fetch(k.launch)).reserve.toNumber() }),
   };
+  if (closeProgram) {
+    const programData = web3.PublicKey.findProgramAddressSync([PROGRAM_ID.toBuffer()], UPGRADEABLE_LOADER)[0];
+    // Upgradeable loader Close (5): program data, recipient, authority (signer), program.
+    const ix = new web3.TransactionInstruction({ programId: UPGRADEABLE_LOADER, data: Buffer.from([5, 0, 0, 0]), keys: [
+      { pubkey: programData, isSigner: false, isWritable: true }, { pubkey: wallet.publicKey, isSigner: false, isWritable: true },
+      { pubkey: wallet.publicKey, isSigner: true, isWritable: false }, { pubkey: PROGRAM_ID, isSigner: false, isWritable: true }] });
+    await step('close the program', () => sendTx([ix], [wallet]), 'program data rent back; permanent');
+  }
+  const end = await balances();
+  let swept = 0;
+  if (sweepTo) {
+    const fee = 5000 + Math.ceil((priority * 400_000) / 1e6);
+    for (const kp of [keeper, wallet]) {
+      const bal = await connection.getBalance(kp.publicKey);
+      if (bal > fee) {
+        await sendTx([web3.SystemProgram.transfer({ fromPubkey: kp.publicKey, toPubkey: sweepTo, lamports: bal - fee })], [kp]);
+        swept += bal - fee;
+      }
+    }
+  }
+  const after = await balances();
+
+  // From the funding down to the final balance: every lamport is in one line.
+  const sol = (x) => (x / SOL).toFixed(9);
+  const lines = [];
+  const add = (label, lamports) => lines.push({ label, lamports });
+  const start = fundedSol ?? funded.w;
+  add(fundedSol === null ? 'wallet at the start' : 'sent to the wallet (--funded-sol)', start);
+  if (fundedSol !== null) add('deploy (rent, program account, write fees)', -(fundedSol - funded.w));
+  for (const row of rows) add(row.label, -(row.wallet + row.keeper));
+  if (sweepTo) add(`swept to ${sweepTo.toBase58()}`, -swept);
+  const sum = lines.reduce((t, l) => t + l.lamports, 0);
+  const left = after.w + after.k;
+  const reconciliation = {
+    lines, leftInWalletAndKeeper: left, balanced: sum === left,
+    lossLamports: start - left - swept,
+  };
+  console.log('\nReconciliation (SOL):');
+  for (const l of lines) console.log(`  ${l.label.padEnd(50)} ${sol(l.lamports).padStart(14)}`);
+  console.log(`  ${'= left on the wallet and the keeper'.padEnd(50)} ${sol(left).padStart(14)}${sum === left ? '' : `  (lines sum to ${sol(sum)})`}`);
+  console.log(`  ${'loss (sent - left - swept)'.padEnd(50)} ${sol(reconciliation.lossLamports).padStart(14)}`);
   const summary = {
     mode: live ? 'mainnet' : 'rehearsal',
-    walletSpentLamports: total('wallet'), keeperSpentLamports: total('keeper'),
-    // Both keys together: what the run cost in the end, after everything that came back.
-    netCostLamports: funded.w + funded.k - end.w - end.k,
     peakWalletNeedLamports: funded.w - lowest.w,
-    keeperLeftLamports: end.k,
     revenue: { curve: r.curve.toString(), stampede: r.stampede.toString(), lp: r.lp.toString(), rounding: r.rounding.toString(), other: r.other.toString() },
     leftOnChain: stuck,
     reinvested: dex?.reinvested ?? null,
   };
   console.log(`\n${JSON.stringify(summary, null, 2)}`);
-  if (sweepTo) {
-    const fee = 5000 + Math.ceil((priority * 400_000) / 1e6);
-    for (const kp of [keeper, wallet]) {
-      const bal = await connection.getBalance(kp.publicKey);
-      if (bal > fee) await sendTx([web3.SystemProgram.transfer({ fromPubkey: kp.publicKey, toPubkey: sweepTo, lamports: bal - fee })], [kp]);
-    }
-    console.log(`swept the wallet and the keeper to ${sweepTo.toBase58()}`);
-  }
-  if (arg('report')) writeFileSync(arg('report'), JSON.stringify({ rows, summary, plan }, null, 2));
+  if (!reconciliation.balanced) throw new Error('the reconciliation does not add up');
+  if (arg('report')) writeFileSync(arg('report'), JSON.stringify({ rows, reconciliation, summary, plan }, null, 2));
 }
 
 main().catch((e) => {
